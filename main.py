@@ -1,17 +1,29 @@
 import asyncio
 import uvicorn
-from dashboard.server import app
-from core.logger import get_logger
 
-log = get_logger("main")
+from dashboard.server import app
+from core.bot import TradingBot  # adjust if path differs
+from broker.alpaca import AlpacaBroker
+
+bot = None
+
+
+async def start_bot():
+    global bot
+    broker = AlpacaBroker()
+    bot = TradingBot(broker)
+    await bot.start()
+
+
+async def main():
+    # Start bot in background
+    asyncio.create_task(start_bot())
+
+    # Start FastAPI server
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 if __name__ == "__main__":
-    log.info("Starting trading system...")
-    uvicorn.run(
-        "dashboard.server:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info"
-    )
+    asyncio.run(main())
