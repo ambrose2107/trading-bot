@@ -13,7 +13,7 @@ bot = None
 async def start_bot():
     global bot
     broker = AlpacaBroker()
-    bot = TradingBot(broker)
+    bot = TradingBot()
     await bot.start()
 
 
