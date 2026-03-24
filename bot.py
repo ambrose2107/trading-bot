@@ -35,7 +35,7 @@ class TradingBot:
         )
 
     async def start(self):
-        await init_db()
+    
         self.running = True
 
         log.info("Trading bot started")
