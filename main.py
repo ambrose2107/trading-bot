@@ -2,7 +2,7 @@ import asyncio
 import uvicorn
 
 from dashboard.server import app
-from core.bot import TradingBot  # adjust if path differs
+from bot import TradingBot  # adjust if path differs
 from broker.alpaca import AlpacaBroker
 
 bot = None
