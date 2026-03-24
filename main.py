@@ -3,7 +3,9 @@ import uvicorn
 
 from dashboard.server import app
 from bot import TradingBot  # adjust if path differs
-from broker.alpaca import AlpacaBroker
+
+# ✅ CORRECT
+from brokers.alpaca_adapter import AlpacaBroker
 
 bot = None
 
