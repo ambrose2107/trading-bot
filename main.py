@@ -19,7 +19,7 @@ async def start_bot():
 
 async def main():
     # Start bot in background
-    asyncio.create_task(start_bot())
+    # asyncio.create_task(start_bot())
 
     # Start FastAPI server
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)

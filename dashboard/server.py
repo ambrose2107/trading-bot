@@ -20,10 +20,29 @@ app = FastAPI(title="Trading Bot Dashboard", version="1.0.0")
 app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
 
-@app.on_event("startup")
-async def startup():
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import asyncio
+
+from core.database import init_db
+from bot import bot
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ✅ Startup
     await init_db()
-    log.info("Dashboard started")
+
+    # Start bot AFTER DB is ready
+    asyncio.create_task(bot.start())
+
+    yield
+
+    # ✅ Shutdown (optional)
+    await bot.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------
@@ -33,6 +52,7 @@ async def startup():
 async def dashboard():
     from fastapi.responses import HTMLResponse
     from fastapi import Response
+
     with open("dashboard/index.html") as f:
         content = f.read()
     response = HTMLResponse(content=content)
@@ -229,27 +249,28 @@ async def get_price_chart(symbol: str, days: int = 365):
     from datetime import datetime, timedelta
     import pandas as pd
     import ta
+
     try:
         bars = alpaca_broker.get_bars(symbol, timeframe="1Day", limit=days)
         df = pd.DataFrame(bars)
         df["close"] = pd.to_numeric(df["close"])
-        df["open"]  = pd.to_numeric(df["open"])
-        df["high"]  = pd.to_numeric(df["high"])
-        df["low"]   = pd.to_numeric(df["low"])
-        df["ma50"]  = df["close"].rolling(50).mean()
+        df["open"] = pd.to_numeric(df["open"])
+        df["high"] = pd.to_numeric(df["high"])
+        df["low"] = pd.to_numeric(df["low"])
+        df["ma50"] = df["close"].rolling(50).mean()
         df["ma200"] = df["close"].rolling(200).mean()
-        df["rsi"]   = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
-        df["ts"]    = df["timestamp"].astype(str).str[:10]
+        df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
+        df["ts"] = df["timestamp"].astype(str).str[:10]
         df = df.dropna()
         return {
-            "dates":  df["ts"].tolist(),
-            "close":  df["close"].round(2).tolist(),
-            "open":   df["open"].round(2).tolist(),
-            "high":   df["high"].round(2).tolist(),
-            "low":    df["low"].round(2).tolist(),
-            "ma50":   df["ma50"].round(2).tolist(),
-            "ma200":  df["ma200"].round(2).tolist(),
-            "rsi":    df["rsi"].round(2).tolist(),
+            "dates": df["ts"].tolist(),
+            "close": df["close"].round(2).tolist(),
+            "open": df["open"].round(2).tolist(),
+            "high": df["high"].round(2).tolist(),
+            "low": df["low"].round(2).tolist(),
+            "ma50": df["ma50"].round(2).tolist(),
+            "ma200": df["ma200"].round(2).tolist(),
+            "rsi": df["rsi"].round(2).tolist(),
         }
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -260,37 +281,47 @@ async def get_price_chart2(symbol: str, days: int = 365, timeframe: str = "1Day"
     import pandas as pd
     import ta
     from datetime import datetime, timedelta
+
     try:
         tf_map = {"1D": "1Day", "1W": "1Week", "1Day": "1Day", "1Week": "1Week"}
         tf = tf_map.get(timeframe, "1Day")
-        start = (datetime.now() - timedelta(days=days + 300)).strftime('%Y-%m-%d')
+        start = (datetime.now() - timedelta(days=days + 300)).strftime("%Y-%m-%d")
         df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=days).df
         df = df.reset_index()
         df.columns = [c.lower() for c in df.columns]
         df["ts"] = df["timestamp"].astype(str).str[:10]
         df["close"] = pd.to_numeric(df["close"])
-        df["open"]  = pd.to_numeric(df["open"])
-        df["high"]  = pd.to_numeric(df["high"])
-        df["low"]   = pd.to_numeric(df["low"])
+        df["open"] = pd.to_numeric(df["open"])
+        df["high"] = pd.to_numeric(df["high"])
+        df["low"] = pd.to_numeric(df["low"])
         n = len(df)
+
         def safe_ma(period):
             if n >= period:
-                return df["close"].rolling(period).mean().round(2).where(
-                    df["close"].rolling(period).mean().notna(), None
-                ).tolist()
+                return (
+                    df["close"]
+                    .rolling(period)
+                    .mean()
+                    .round(2)
+                    .where(df["close"].rolling(period).mean().notna(), None)
+                    .tolist()
+                )
             return [None] * n
-        df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi() if n >= 14 else None
+
+        df["rsi"] = (
+            ta.momentum.RSIIndicator(df["close"], window=14).rsi() if n >= 14 else None
+        )
         return {
-            "dates":  df["ts"].tolist(),
-            "close":  df["close"].round(2).tolist(),
-            "open":   df["open"].round(2).tolist(),
-            "high":   df["high"].round(2).tolist(),
-            "low":    df["low"].round(2).tolist(),
-            "ma21":   safe_ma(21),
-            "ma50":   safe_ma(50),
-            "ma200":  safe_ma(200),
-            "rsi":    df["rsi"].round(2).tolist() if df["rsi"] is not None else [None]*n,
-            "count":  n,
+            "dates": df["ts"].tolist(),
+            "close": df["close"].round(2).tolist(),
+            "open": df["open"].round(2).tolist(),
+            "high": df["high"].round(2).tolist(),
+            "low": df["low"].round(2).tolist(),
+            "ma21": safe_ma(21),
+            "ma50": safe_ma(50),
+            "ma200": safe_ma(200),
+            "rsi": df["rsi"].round(2).tolist() if df["rsi"] is not None else [None] * n,
+            "count": n,
         }
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -301,11 +332,12 @@ async def get_chart3(symbol: str, days: int = 365, timeframe: str = "1Day"):
     import pandas as pd
     import ta
     from datetime import datetime, timedelta
+
     try:
         tf_map = {"1D": "1Day", "1W": "1Week", "1Day": "1Day", "1Week": "1Week"}
         tf = tf_map.get(timeframe, "1Day")
         days_back = days * 7 if tf == "1Week" else days
-        start = (datetime.now() - timedelta(days=days_back + 300)).strftime('%Y-%m-%d')
+        start = (datetime.now() - timedelta(days=days_back + 300)).strftime("%Y-%m-%d")
         df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=days + 300).df
         df = df.reset_index()
         df.columns = [str(c).lower() for c in df.columns]
@@ -316,11 +348,13 @@ async def get_chart3(symbol: str, days: int = 365, timeframe: str = "1Day"):
             df["ts"] = df.index.astype(str).str[:10]
         df["close"] = pd.to_numeric(df["close"])
         n = len(df)
+
         def safe_ma(p):
             if n >= p:
                 vals = df["close"].rolling(p).mean().tolist()
                 return [round(v, 2) if v == v else None for v in vals]
             return [None] * n
+
         rsi_vals = [None] * n
         if n >= 14:
             rsi_series = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
@@ -328,10 +362,10 @@ async def get_chart3(symbol: str, days: int = 365, timeframe: str = "1Day"):
         return {
             "dates": df["ts"].tolist(),
             "close": df["close"].round(2).tolist(),
-            "ma21":  safe_ma(21),
-            "ma50":  safe_ma(50),
+            "ma21": safe_ma(21),
+            "ma50": safe_ma(50),
             "ma200": safe_ma(200),
-            "rsi":   rsi_vals,
+            "rsi": rsi_vals,
             "count": n,
         }
     except Exception as e:
@@ -343,22 +377,33 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
     import pandas as pd
     import ta
     from datetime import datetime, timedelta
+
     try:
         tf_map = {
-            "5min": "5Min", "15min": "15Min", "1hr": "1Hour",
-            "4hr": "4Hour", "1D": "1Day", "1W": "1Week",
-            "5Min": "5Min", "15Min": "15Min", "1Hour": "1Hour",
-            "4Hour": "4Hour", "1Day": "1Day", "1Week": "1Week"
+            "5min": "5Min",
+            "15min": "15Min",
+            "1hr": "1Hour",
+            "4hr": "4Hour",
+            "1D": "1Day",
+            "1W": "1Week",
+            "5Min": "5Min",
+            "15Min": "15Min",
+            "1Hour": "1Hour",
+            "4Hour": "4Hour",
+            "1Day": "1Day",
+            "1Week": "1Week",
         }
         tf = tf_map.get(timeframe, "1Day")
         intraday = tf in ["5Min", "15Min", "1Hour", "4Hour"]
         if intraday:
             days_back = min(days, 59)
-            start = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
             lim = 2000
         else:
             days_back = days * 7 if tf == "1Week" else days
-            start = (datetime.now() - timedelta(days=days_back + 300)).strftime('%Y-%m-%d')
+            start = (datetime.now() - timedelta(days=days_back + 300)).strftime(
+                "%Y-%m-%d"
+            )
             lim = days + 300
         df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=lim).df
         df = df.reset_index()
@@ -370,29 +415,31 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
             else:
                 df["ts"] = df[ts_col].astype(str).str[:10]
         df["close"] = pd.to_numeric(df["close"])
-        df["open"]  = pd.to_numeric(df["open"])
-        df["high"]  = pd.to_numeric(df["high"])
-        df["low"]   = pd.to_numeric(df["low"])
+        df["open"] = pd.to_numeric(df["open"])
+        df["high"] = pd.to_numeric(df["high"])
+        df["low"] = pd.to_numeric(df["low"])
         n = len(df)
+
         def safe_ma(p):
             if n >= p:
                 vals = df["close"].rolling(p).mean().tolist()
-                return [round(v,2) if v==v else None for v in vals]
-            return [None]*n
-        rsi_vals = [None]*n
+                return [round(v, 2) if v == v else None for v in vals]
+            return [None] * n
+
+        rsi_vals = [None] * n
         if n >= 14:
             rsi_series = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
-            rsi_vals = [round(v,2) if v==v else None for v in rsi_series.tolist()]
+            rsi_vals = [round(v, 2) if v == v else None for v in rsi_series.tolist()]
         return {
             "dates": df["ts"].tolist(),
             "close": df["close"].round(2).tolist(),
-            "open":  df["open"].round(2).tolist(),
-            "high":  df["high"].round(2).tolist(),
-            "low":   df["low"].round(2).tolist(),
-            "ma21":  safe_ma(21),
-            "ma50":  safe_ma(50),
+            "open": df["open"].round(2).tolist(),
+            "high": df["high"].round(2).tolist(),
+            "low": df["low"].round(2).tolist(),
+            "ma21": safe_ma(21),
+            "ma50": safe_ma(50),
             "ma200": safe_ma(200),
-            "rsi":   rsi_vals,
+            "rsi": rsi_vals,
             "count": n,
         }
     except Exception as e:
@@ -403,16 +450,19 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
 from core.strategy_loader import get_strategy_info, discover_strategies
 from backtest import Backtester
 
+
 @app.get("/api/strategies")
 async def list_strategies():
     """List all discovered strategy files."""
     return {"strategies": get_strategy_info()}
+
 
 @app.post("/api/strategies/reload")
 async def reload_strategies():
     """Hot-reload strategies without restarting the bot."""
     names = bot.reload_strategies()
     return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
+
 
 @app.post("/api/bot/start-strategy/{name}")
 async def start_single_strategy(name: str):
@@ -425,15 +475,16 @@ async def start_single_strategy(name: str):
 
 
 class StrategyBacktestRequest(BaseModel):
-    symbol:    str
-    strategy:  str
-    days:      int   = 365
-    cash:      float = 10000
-    fast_ma:   int   = 50
-    slow_ma:   int   = 200
-    rsi_period:int   = 14
-    oversold:  int   = 30
-    overbought:int   = 70
+    symbol: str
+    strategy: str
+    days: int = 365
+    cash: float = 10000
+    fast_ma: int = 50
+    slow_ma: int = 200
+    rsi_period: int = 14
+    oversold: int = 30
+    overbought: int = 70
+
 
 @app.post("/api/backtest/strategy")
 async def backtest_strategy(req: StrategyBacktestRequest):
@@ -443,78 +494,131 @@ async def backtest_strategy(req: StrategyBacktestRequest):
         import pandas as pd
 
         # Get bars
-        start = (datetime.now() - timedelta(days=req.days + 300)).strftime('%Y-%m-%d')
-        df = alpaca_broker.api.get_bars(req.symbol, "1Day", start=start, limit=req.days + 300).df
+        start = (datetime.now() - timedelta(days=req.days + 300)).strftime("%Y-%m-%d")
+        df = alpaca_broker.api.get_bars(
+            req.symbol, "1Day", start=start, limit=req.days + 300
+        ).df
         df = df.reset_index()
         df.columns = [str(c).lower() for c in df.columns]
         ts_col = next((c for c in df.columns if "time" in c), None)
         if ts_col:
             df["timestamp"] = df[ts_col].astype(str).str[:10]
         df["close"] = pd.to_numeric(df["close"])
-        df["open"]  = pd.to_numeric(df["open"])
-        df["high"]  = pd.to_numeric(df["high"])
-        df["low"]   = pd.to_numeric(df["low"])
+        df["open"] = pd.to_numeric(df["open"])
+        df["high"] = pd.to_numeric(df["high"])
+        df["low"] = pd.to_numeric(df["low"])
 
         if req.strategy == "institutional_ema":
             # EMA strategy backtest
-            df["ema9"]   = df["close"].ewm(span=9).mean()
-            df["ema21"]  = df["close"].ewm(span=21).mean()
-            df["ema50"]  = df["close"].ewm(span=50).mean()
+            df["ema9"] = df["close"].ewm(span=9).mean()
+            df["ema21"] = df["close"].ewm(span=21).mean()
+            df["ema50"] = df["close"].ewm(span=50).mean()
             df["ema200"] = df["close"].ewm(span=200).mean()
             df["tr1"] = df["high"] - df["low"]
             df["tr2"] = abs(df["high"] - df["close"].shift())
-            df["tr3"] = abs(df["low"]  - df["close"].shift())
-            df["atr"] = df[["tr1","tr2","tr3"]].max(axis=1).rolling(14).mean()
+            df["tr3"] = abs(df["low"] - df["close"].shift())
+            df["atr"] = df[["tr1", "tr2", "tr3"]].max(axis=1).rolling(14).mean()
             df = df.dropna().reset_index(drop=True)
 
-            cash = req.cash; shares = 0; trades = []; equity_curve = []
+            cash = req.cash
+            shares = 0
+            trades = []
+            equity_curve = []
             entry_price = 0
 
             for i in range(1, len(df)):
-                row = df.iloc[i]; prev = df.iloc[i-1]
-                price = row["close"]; ts = row["timestamp"]
+                row = df.iloc[i]
+                prev = df.iloc[i - 1]
+                price = row["close"]
+                ts = row["timestamp"]
                 bullish_trend = price > row["ema200"] and row["ema50"] > row["ema200"]
-                pullback      = abs(price - row["ema21"]) / price < 0.015
-                bullish_cross = prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
-                valid_vol     = row["atr"] / price > 0.01
-                bearish_cross = prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
-                trend_break   = price < row["ema200"]
+                pullback = abs(price - row["ema21"]) / price < 0.015
+                bullish_cross = (
+                    prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
+                )
+                valid_vol = row["atr"] / price > 0.01
+                bearish_cross = (
+                    prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
+                )
+                trend_break = price < row["ema200"]
 
-                if bullish_trend and pullback and bullish_cross and valid_vol and shares == 0:
+                if (
+                    bullish_trend
+                    and pullback
+                    and bullish_cross
+                    and valid_vol
+                    and shares == 0
+                ):
                     risk_ps = 1.5 * row["atr"]
                     qty = int((cash * 0.01) / risk_ps) if risk_ps > 0 else 0
                     qty = min(qty, int(cash * 0.95 / price))
                     if qty > 0:
-                        cash -= qty * price; shares = qty; entry_price = price
-                        trades.append({"date": ts, "side": "BUY", "qty": qty, "price": round(price,2), "reason": "EMA setup", "value": qty*price})
+                        cash -= qty * price
+                        shares = qty
+                        entry_price = price
+                        trades.append(
+                            {
+                                "date": ts,
+                                "side": "BUY",
+                                "qty": qty,
+                                "price": round(price, 2),
+                                "reason": "EMA setup",
+                                "value": qty * price,
+                            }
+                        )
 
-                elif shares > 0 and (bearish_cross or trend_break or price < entry_price - 1.5 * row["atr"]):
+                elif shares > 0 and (
+                    bearish_cross
+                    or trend_break
+                    or price < entry_price - 1.5 * row["atr"]
+                ):
                     pnl = (price - entry_price) * shares
                     cash += shares * price
-                    trades.append({"date": ts, "side": "SELL", "qty": shares, "price": round(price,2), "reason": "Exit signal", "pnl": round(pnl,2), "value": shares*price})
+                    trades.append(
+                        {
+                            "date": ts,
+                            "side": "SELL",
+                            "qty": shares,
+                            "price": round(price, 2),
+                            "reason": "Exit signal",
+                            "pnl": round(pnl, 2),
+                            "value": shares * price,
+                        }
+                    )
                     shares = 0
 
-                equity_curve.append({"date": ts, "equity": round(cash + shares * price, 2)})
+                equity_curve.append(
+                    {"date": ts, "equity": round(cash + shares * price, 2)}
+                )
 
             final_equity = cash + shares * (df["close"].iloc[-1] if shares > 0 else 0)
             sells = [t for t in trades if t["side"] == "SELL"]
-            wins  = [t for t in sells if t.get("pnl", 0) > 0]
+            wins = [t for t in sells if t.get("pnl", 0) > 0]
             total_pnl = sum(t.get("pnl", 0) for t in sells)
 
-            return {"status": "ok", "results": [{
-                "strategy":         "Institutional EMA",
-                "symbol":           req.symbol,
-                "starting_cash":    req.cash,
-                "final_equity":     round(final_equity, 2),
-                "total_return_pct": round((final_equity - req.cash) / req.cash * 100, 2),
-                "total_pnl":        round(total_pnl, 2),
-                "total_trades":     len(trades),
-                "winning_trades":   len(wins),
-                "losing_trades":    len(sells) - len(wins),
-                "win_rate_pct":     round(len(wins)/len(sells)*100, 2) if sells else 0,
-                "equity_curve":     equity_curve,
-                "trades":           trades,
-            }]}
+            return {
+                "status": "ok",
+                "results": [
+                    {
+                        "strategy": "Institutional EMA",
+                        "symbol": req.symbol,
+                        "starting_cash": req.cash,
+                        "final_equity": round(final_equity, 2),
+                        "total_return_pct": round(
+                            (final_equity - req.cash) / req.cash * 100, 2
+                        ),
+                        "total_pnl": round(total_pnl, 2),
+                        "total_trades": len(trades),
+                        "winning_trades": len(wins),
+                        "losing_trades": len(sells) - len(wins),
+                        "win_rate_pct": round(len(wins) / len(sells) * 100, 2)
+                        if sells
+                        else 0,
+                        "equity_curve": equity_curve,
+                        "trades": trades,
+                    }
+                ],
+            }
 
         else:
             # Fall back to standard backtester
@@ -523,9 +627,9 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                 r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
             else:
                 r = bt.run_rsi(req.rsi_period, req.oversold, req.overbought)
-            r["strategy"]     = req.strategy
+            r["strategy"] = req.strategy
             r["equity_curve"] = bt.equity_curve
-            r["trades"]       = bt.trades
+            r["trades"] = bt.trades
             return {"status": "ok", "results": [r]}
 
     except Exception as e:
@@ -534,6 +638,7 @@ async def backtest_strategy(req: StrategyBacktestRequest):
 
 class StartSelectedRequest(BaseModel):
     strategies: list
+
 
 @app.post("/api/bot/start-selected")
 async def start_selected_strategies(req: StartSelectedRequest):
