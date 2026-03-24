@@ -70,8 +70,17 @@ class BotStatus(Base):
 
 
 async def init_db():
+    import os
+
+    os.makedirs("data", exist_ok=True)
+
+    # 🔥 TEMP RESET (remove after first successful run)
+    db_path = "data/trading.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_db():
