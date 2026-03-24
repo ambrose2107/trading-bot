@@ -31,8 +31,14 @@ async def startup():
 # ------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
+    from fastapi.responses import HTMLResponse
+    from fastapi import Response
     with open("dashboard/index.html") as f:
-        return f.read()
+        content = f.read()
+    response = HTMLResponse(content=content)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # ------------------------------------------------------------------
@@ -524,3 +530,15 @@ async def backtest_strategy(req: StrategyBacktestRequest):
 
     except Exception as e:
         raise HTTPException(500, f"Strategy backtest error: {str(e)}")
+
+
+class StartSelectedRequest(BaseModel):
+    strategies: list
+
+@app.post("/api/bot/start-selected")
+async def start_selected_strategies(req: StartSelectedRequest):
+    if bot.running:
+        await bot.stop()
+        await asyncio.sleep(1)
+    asyncio.create_task(bot.start(strategy_names=req.strategies))
+    return {"message": f"Started: {', '.join(req.strategies)}"}
