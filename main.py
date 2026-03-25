@@ -5,7 +5,7 @@ from core.logger import get_logger
 log = get_logger("main")
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     log.info(f"Starting on port {port}...")
     uvicorn.run(
         "dashboard.server:app",

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -16,43 +17,35 @@ from backtest import Backtester
 
 log = get_logger("dashboard")
 
-app = FastAPI(title="Trading Bot Dashboard", version="1.0.0")
-app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
-
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-import asyncio
-
-from core.database import init_db
-from bot import bot
-
-
+# ── Single lifespan ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ✅ Startup
     await init_db()
-
-    # Start bot AFTER DB is ready
     asyncio.create_task(bot.start())
-
     yield
-
-    # ✅ Shutdown (optional)
     await bot.stop()
 
 
-app = FastAPI(lifespan=lifespan)
+# ── Single app instance ──────────────────────────────────────────
+app = FastAPI(title="Trading Bot Dashboard", version="1.0.0", lifespan=lifespan)
+
+# Static files (only if directory exists — won't crash if missing)
+import os
+
+if os.path.isdir("dashboard/static"):
+    app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
 
-# ------------------------------------------------------------------
-# Dashboard HTML
-# ------------------------------------------------------------------
+# ── Health check (for keep-alive pings e.g. UptimeRobot) ────────
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+# ── Dashboard HTML ───────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    from fastapi.responses import HTMLResponse
-    from fastapi import Response
-
     with open("dashboard/index.html") as f:
         content = f.read()
     response = HTMLResponse(content=content)
@@ -61,9 +54,7 @@ async def dashboard():
     return response
 
 
-# ------------------------------------------------------------------
-# API endpoints (called by the frontend JS)
-# ------------------------------------------------------------------
+# ── API endpoints ────────────────────────────────────────────────
 @app.get("/api/account")
 async def get_account():
     try:
@@ -132,9 +123,7 @@ async def get_recent_orders():
         raise HTTPException(500, str(e))
 
 
-# ------------------------------------------------------------------
-# Bot controls
-# ------------------------------------------------------------------
+# ── Bot controls ─────────────────────────────────────────────────
 @app.post("/api/bot/start")
 async def start_bot():
     if bot.running:
@@ -170,9 +159,7 @@ async def emergency_close():
     return {"message": "EMERGENCY: All positions closed, all orders cancelled."}
 
 
-# ------------------------------------------------------------------
-# Backtest endpoints
-# ------------------------------------------------------------------
+# ── Backtest endpoints ───────────────────────────────────────────
 class BacktestRequest(BaseModel):
     symbol: str
     strategy: str  # ma_crossover | rsi | both
@@ -446,27 +433,28 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
         raise HTTPException(500, f"Chart error: {str(e)}")
 
 
-# ── Strategy management endpoints ──────────────────────────────
-from core.strategy_loader import get_strategy_info, discover_strategies
-from backtest import Backtester
+# ── Strategy management ──────────────────────────────────────────
+def get_strategy_info():
+    """Return info about currently loaded strategies."""
+    return [
+        {"name": s.name, "description": getattr(s, "description", "No description")}
+        for s in bot.strategies
+    ]
 
 
 @app.get("/api/strategies")
 async def list_strategies():
-    """List all discovered strategy files."""
     return {"strategies": get_strategy_info()}
 
 
 @app.post("/api/strategies/reload")
 async def reload_strategies():
-    """Hot-reload strategies without restarting the bot."""
-    names = bot.reload_strategies()
+    names = bot.reload_strategies() if hasattr(bot, "reload_strategies") else []
     return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
 
 
 @app.post("/api/bot/start-strategy/{name}")
 async def start_single_strategy(name: str):
-    """Start bot running only one specific strategy."""
     if bot.running:
         await bot.stop()
         await asyncio.sleep(1)
@@ -488,12 +476,10 @@ class StrategyBacktestRequest(BaseModel):
 
 @app.post("/api/backtest/strategy")
 async def backtest_strategy(req: StrategyBacktestRequest):
-    """Backtest any discovered strategy by name."""
     try:
         from datetime import datetime, timedelta
         import pandas as pd
 
-        # Get bars
         start = (datetime.now() - timedelta(days=req.days + 300)).strftime("%Y-%m-%d")
         df = alpaca_broker.api.get_bars(
             req.symbol, "1Day", start=start, limit=req.days + 300
@@ -509,7 +495,6 @@ async def backtest_strategy(req: StrategyBacktestRequest):
         df["low"] = pd.to_numeric(df["low"])
 
         if req.strategy == "institutional_ema":
-            # EMA strategy backtest
             df["ema9"] = df["close"].ewm(span=9).mean()
             df["ema21"] = df["close"].ewm(span=21).mean()
             df["ema50"] = df["close"].ewm(span=50).mean()
@@ -621,7 +606,6 @@ async def backtest_strategy(req: StrategyBacktestRequest):
             }
 
         else:
-            # Fall back to standard backtester
             bt = Backtester(req.symbol, req.days, req.cash)
             if req.strategy == "ma_crossover":
                 r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
