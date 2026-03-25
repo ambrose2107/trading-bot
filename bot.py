@@ -35,7 +35,6 @@ class TradingBot:
         )
 
     async def start(self):
-    
         self.running = True
 
         log.info("Trading bot started")
@@ -90,9 +89,13 @@ class TradingBot:
             except Exception as e:
                 log.error(f"Strategy {strategy.name} error: {e}")
 
+    from datetime import datetime, timezone
+
     async def _update_status(self, running: bool, message: str):
         try:
             async with AsyncSessionLocal() as db:
+                from sqlalchemy import select
+
                 result = await db.execute(select(BotStatus).limit(1))
                 status = result.scalar_one_or_none()
 
@@ -103,17 +106,18 @@ class TradingBot:
                 status.is_running = running
                 status.message = message
                 status.mode = alpaca_broker.mode
-
-                # ✅ FIXED (timezone-aware)
-                status.updated_at = utc_now()
+                status.updated_at = datetime.now(timezone.utc)
 
                 if running and not status.started_at:
-                    status.started_at = utc_now()
+                    status.started_at = datetime.now(timezone.utc)
 
                 await db.commit()
 
+                # 🔥 ADD THIS (debug)
+                print("✅ Bot status updated")
+
         except Exception as e:
-            log.error(f"Could not update bot status: {e}")
+            print(f"❌ Status update failed: {e}")
 
 
 # Global bot instance
