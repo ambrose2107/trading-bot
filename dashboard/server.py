@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -16,43 +17,34 @@ from backtest import Backtester
 
 log = get_logger("dashboard")
 
-app = FastAPI(title="Trading Bot Dashboard", version="1.0.0")
-app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
-
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-import asyncio
-
-from core.database import init_db
-from bot import bot
-
-
+# ── Single lifespan ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ✅ Startup
     await init_db()
-
-    # Start bot AFTER DB is ready
     asyncio.create_task(bot.start())
-
     yield
-
-    # ✅ Shutdown (optional)
     await bot.stop()
 
 
-app = FastAPI(lifespan=lifespan)
+# ── Single app instance ──────────────────────────────────────────
+app = FastAPI(title="Trading Bot Dashboard", version="1.0.0", lifespan=lifespan)
+
+# Static files (only if directory exists — won't crash if missing)
+import os
+if os.path.isdir("dashboard/static"):
+    app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
 
-# ------------------------------------------------------------------
-# Dashboard HTML
-# ------------------------------------------------------------------
+# ── Health check (for keep-alive pings e.g. UptimeRobot) ────────
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+# ── Dashboard HTML ───────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    from fastapi.responses import HTMLResponse
-    from fastapi import Response
-
     with open("dashboard/index.html") as f:
         content = f.read()
     response = HTMLResponse(content=content)
@@ -61,9 +53,7 @@ async def dashboard():
     return response
 
 
-# ------------------------------------------------------------------
-# API endpoints (called by the frontend JS)
-# ------------------------------------------------------------------
+# ── API endpoints ────────────────────────────────────────────────
 @app.get("/api/account")
 async def get_account():
     try:
@@ -132,9 +122,7 @@ async def get_recent_orders():
         raise HTTPException(500, str(e))
 
 
-# ------------------------------------------------------------------
-# Bot controls
-# ------------------------------------------------------------------
+# ── Bot controls ─────────────────────────────────────────────────
 @app.post("/api/bot/start")
 async def start_bot():
     if bot.running:
@@ -170,9 +158,7 @@ async def emergency_close():
     return {"message": "EMERGENCY: All positions closed, all orders cancelled."}
 
 
-# ------------------------------------------------------------------
-# Backtest endpoints
-# ------------------------------------------------------------------
+# ── Backtest endpoints ───────────────────────────────────────────
 class BacktestRequest(BaseModel):
     symbol: str
     strategy: str  # ma_crossover | rsi | both
@@ -216,30 +202,9 @@ async def run_backtest(req: BacktestRequest):
 async def get_symbols():
     return {
         "symbols": [
-            "AAPL",
-            "MSFT",
-            "GOOGL",
-            "AMZN",
-            "NVDA",
-            "TSLA",
-            "META",
-            "SPY",
-            "QQQ",
-            "AMD",
-            "NFLX",
-            "DIS",
-            "BABA",
-            "UBER",
-            "COIN",
-            "JPM",
-            "BAC",
-            "V",
-            "MA",
-            "WMT",
-            "SBUX",
-            "INTC",
-            "CRM",
-            "PYPL",
+            "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META",
+            "SPY", "QQQ", "AMD", "NFLX", "DIS", "BABA", "UBER", "COIN",
+            "JPM", "BAC", "V", "MA", "WMT", "SBUX", "INTC", "CRM", "PYPL",
         ]
     }
 
@@ -380,18 +345,9 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
 
     try:
         tf_map = {
-            "5min": "5Min",
-            "15min": "15Min",
-            "1hr": "1Hour",
-            "4hr": "4Hour",
-            "1D": "1Day",
-            "1W": "1Week",
-            "5Min": "5Min",
-            "15Min": "15Min",
-            "1Hour": "1Hour",
-            "4Hour": "4Hour",
-            "1Day": "1Day",
-            "1Week": "1Week",
+            "5min": "5Min", "15min": "15Min", "1hr": "1Hour", "4hr": "4Hour",
+            "1D": "1Day", "1W": "1Week", "5Min": "5Min", "15Min": "15Min",
+            "1Hour": "1Hour", "4Hour": "4Hour", "1Day": "1Day", "1Week": "1Week",
         }
         tf = tf_map.get(timeframe, "1Day")
         intraday = tf in ["5Min", "15Min", "1Hour", "4Hour"]
@@ -401,9 +357,7 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
             lim = 2000
         else:
             days_back = days * 7 if tf == "1Week" else days
-            start = (datetime.now() - timedelta(days=days_back + 300)).strftime(
-                "%Y-%m-%d"
-            )
+            start = (datetime.now() - timedelta(days=days_back + 300)).strftime("%Y-%m-%d")
             lim = days + 300
         df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=lim).df
         df = df.reset_index()
@@ -446,27 +400,28 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
         raise HTTPException(500, f"Chart error: {str(e)}")
 
 
-# ── Strategy management endpoints ──────────────────────────────
-from core.strategy_loader import get_strategy_info, discover_strategies
-from backtest import Backtester
+# ── Strategy management ──────────────────────────────────────────
+def get_strategy_info():
+    """Return info about currently loaded strategies."""
+    return [
+        {"name": s.name, "description": getattr(s, "description", "No description")}
+        for s in bot.strategies
+    ]
 
 
 @app.get("/api/strategies")
 async def list_strategies():
-    """List all discovered strategy files."""
     return {"strategies": get_strategy_info()}
 
 
 @app.post("/api/strategies/reload")
 async def reload_strategies():
-    """Hot-reload strategies without restarting the bot."""
-    names = bot.reload_strategies()
+    names = bot.reload_strategies() if hasattr(bot, "reload_strategies") else []
     return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
 
 
 @app.post("/api/bot/start-strategy/{name}")
 async def start_single_strategy(name: str):
-    """Start bot running only one specific strategy."""
     if bot.running:
         await bot.stop()
         await asyncio.sleep(1)
@@ -488,12 +443,10 @@ class StrategyBacktestRequest(BaseModel):
 
 @app.post("/api/backtest/strategy")
 async def backtest_strategy(req: StrategyBacktestRequest):
-    """Backtest any discovered strategy by name."""
     try:
         from datetime import datetime, timedelta
         import pandas as pd
 
-        # Get bars
         start = (datetime.now() - timedelta(days=req.days + 300)).strftime("%Y-%m-%d")
         df = alpaca_broker.api.get_bars(
             req.symbol, "1Day", start=start, limit=req.days + 300
@@ -509,7 +462,6 @@ async def backtest_strategy(req: StrategyBacktestRequest):
         df["low"] = pd.to_numeric(df["low"])
 
         if req.strategy == "institutional_ema":
-            # EMA strategy backtest
             df["ema9"] = df["close"].ewm(span=9).mean()
             df["ema21"] = df["close"].ewm(span=21).mean()
             df["ema50"] = df["close"].ewm(span=50).mean()
@@ -533,22 +485,12 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                 ts = row["timestamp"]
                 bullish_trend = price > row["ema200"] and row["ema50"] > row["ema200"]
                 pullback = abs(price - row["ema21"]) / price < 0.015
-                bullish_cross = (
-                    prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
-                )
+                bullish_cross = prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
                 valid_vol = row["atr"] / price > 0.01
-                bearish_cross = (
-                    prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
-                )
+                bearish_cross = prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
                 trend_break = price < row["ema200"]
 
-                if (
-                    bullish_trend
-                    and pullback
-                    and bullish_cross
-                    and valid_vol
-                    and shares == 0
-                ):
+                if bullish_trend and pullback and bullish_cross and valid_vol and shares == 0:
                     risk_ps = 1.5 * row["atr"]
                     qty = int((cash * 0.01) / risk_ps) if risk_ps > 0 else 0
                     qty = min(qty, int(cash * 0.95 / price))
@@ -556,40 +498,23 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                         cash -= qty * price
                         shares = qty
                         entry_price = price
-                        trades.append(
-                            {
-                                "date": ts,
-                                "side": "BUY",
-                                "qty": qty,
-                                "price": round(price, 2),
-                                "reason": "EMA setup",
-                                "value": qty * price,
-                            }
-                        )
+                        trades.append({
+                            "date": ts, "side": "BUY", "qty": qty,
+                            "price": round(price, 2), "reason": "EMA setup",
+                            "value": qty * price,
+                        })
 
-                elif shares > 0 and (
-                    bearish_cross
-                    or trend_break
-                    or price < entry_price - 1.5 * row["atr"]
-                ):
+                elif shares > 0 and (bearish_cross or trend_break or price < entry_price - 1.5 * row["atr"]):
                     pnl = (price - entry_price) * shares
                     cash += shares * price
-                    trades.append(
-                        {
-                            "date": ts,
-                            "side": "SELL",
-                            "qty": shares,
-                            "price": round(price, 2),
-                            "reason": "Exit signal",
-                            "pnl": round(pnl, 2),
-                            "value": shares * price,
-                        }
-                    )
+                    trades.append({
+                        "date": ts, "side": "SELL", "qty": shares,
+                        "price": round(price, 2), "reason": "Exit signal",
+                        "pnl": round(pnl, 2), "value": shares * price,
+                    })
                     shares = 0
 
-                equity_curve.append(
-                    {"date": ts, "equity": round(cash + shares * price, 2)}
-                )
+                equity_curve.append({"date": ts, "equity": round(cash + shares * price, 2)})
 
             final_equity = cash + shares * (df["close"].iloc[-1] if shares > 0 else 0)
             sells = [t for t in trades if t["side"] == "SELL"]
@@ -598,30 +523,23 @@ async def backtest_strategy(req: StrategyBacktestRequest):
 
             return {
                 "status": "ok",
-                "results": [
-                    {
-                        "strategy": "Institutional EMA",
-                        "symbol": req.symbol,
-                        "starting_cash": req.cash,
-                        "final_equity": round(final_equity, 2),
-                        "total_return_pct": round(
-                            (final_equity - req.cash) / req.cash * 100, 2
-                        ),
-                        "total_pnl": round(total_pnl, 2),
-                        "total_trades": len(trades),
-                        "winning_trades": len(wins),
-                        "losing_trades": len(sells) - len(wins),
-                        "win_rate_pct": round(len(wins) / len(sells) * 100, 2)
-                        if sells
-                        else 0,
-                        "equity_curve": equity_curve,
-                        "trades": trades,
-                    }
-                ],
+                "results": [{
+                    "strategy": "Institutional EMA",
+                    "symbol": req.symbol,
+                    "starting_cash": req.cash,
+                    "final_equity": round(final_equity, 2),
+                    "total_return_pct": round((final_equity - req.cash) / req.cash * 100, 2),
+                    "total_pnl": round(total_pnl, 2),
+                    "total_trades": len(trades),
+                    "winning_trades": len(wins),
+                    "losing_trades": len(sells) - len(wins),
+                    "win_rate_pct": round(len(wins) / len(sells) * 100, 2) if sells else 0,
+                    "equity_curve": equity_curve,
+                    "trades": trades,
+                }],
             }
 
         else:
-            # Fall back to standard backtester
             bt = Backtester(req.symbol, req.days, req.cash)
             if req.strategy == "ma_crossover":
                 r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
