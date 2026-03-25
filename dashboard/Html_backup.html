@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Trading Bot Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: #0f172a;
+                color: white;
+                margin: 0;
+                padding: 20px;
+            }
+
+            h1 {
+                text-align: center;
+            }
+
+            .card {
+                background: #1e293b;
+                padding: 20px;
+                margin: 15px auto;
+                border-radius: 12px;
+                max-width: 600px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            }
+
+            .status {
+                font-size: 24px;
+                font-weight: bold;
+            }
+
+            .green {
+                color: #22c55e;
+            }
+            .red {
+                color: #ef4444;
+            }
+            .yellow {
+                color: #facc15;
+            }
+
+            button {
+                padding: 10px 15px;
+                margin: 5px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: bold;
+            }
+
+            .btn-start {
+                background: #22c55e;
+            }
+            .btn-stop {
+                background: #ef4444;
+            }
+            .btn-kill {
+                background: orange;
+            }
+        </style>
+    </head>
+
+    <body>
+        <h1>🚀 Trading Bot Dashboard</h1>
+
+        <div class="card">
+            <h2>
+                Status: <span id="bot-status" class="status">Loading...</span>
+            </h2>
+            <p>Mode: <span id="mode">-</span></p>
+            <p>Equity: $<span id="equity">-</span></p>
+            <p>Daily PnL: $<span id="pnl">-</span></p>
+            <p>Open Positions: <span id="positions">-</span></p>
+            <p>Message: <span id="message">-</span></p>
+        </div>
+
+        <div class="card">
+            <h3>Controls</h3>
+            <button class="btn-start" onclick="startBot()">Start Bot</button>
+            <button class="btn-stop" onclick="stopBot()">Stop Bot</button>
+            <button class="btn-kill" onclick="killSwitch()">Kill Switch</button>
+        </div>
+
+        <script>
+            async function fetchStatus() {
+                try {
+                    const res = await fetch("/api/status");
+                    const data = await res.json();
+
+                    console.log("STATUS:", data);
+
+                    const statusEl = document.getElementById("bot-status");
+
+                    if (data.is_running) {
+                        statusEl.innerHTML = "🟢 ONLINE";
+                        statusEl.className = "status green";
+                    } else {
+                        statusEl.innerHTML = "🔴 OFFLINE";
+                        statusEl.className = "status red";
+                    }
+
+                    document.getElementById("mode").innerText =
+                        data.mode ?? "-";
+                    document.getElementById("equity").innerText = (
+                        data.equity || 0
+                    ).toFixed(2);
+                    document.getElementById("pnl").innerText = (
+                        data.daily_pnl || 0
+                    ).toFixed(2);
+                    document.getElementById("positions").innerText =
+                        data.open_positions ?? 0;
+                    document.getElementById("message").innerText =
+                        data.message ?? "-";
+                } catch (err) {
+                    console.error("Error:", err);
+                    document.getElementById("bot-status").innerHTML =
+                        "⚠️ ERROR";
+                    document.getElementById("bot-status").className =
+                        "status yellow";
+                }
+            }
+
+            async function startBot() {
+                await fetch("/api/bot/start", { method: "POST" });
+                setTimeout(fetchStatus, 1000);
+            }
+
+            async function stopBot() {
+                await fetch("/api/bot/stop", { method: "POST" });
+                setTimeout(fetchStatus, 1000);
+            }
+
+            async function killSwitch() {
+                await fetch("/api/bot/kill-switch/on", { method: "POST" });
+                setTimeout(fetchStatus, 1000);
+            }
+
+            // 🔁 Auto refresh every 3 sec
+            setInterval(fetchStatus, 3000);
+
+            // Run immediately
+            fetchStatus();
+        </script>
+    </body>
+</html>
