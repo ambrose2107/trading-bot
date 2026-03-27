@@ -8,7 +8,6 @@ log = get_logger("strategy_loader")
 
 STRATEGY_DIRS = ["strategies/stocks", "strategies/options", "strategies/crypto"]
 
-# Strategy metadata — parameters shown in the dashboard
 STRATEGY_PARAMS = {
     "ma_crossover": {
         "display_name": "MA Crossover",
@@ -59,6 +58,45 @@ STRATEGY_PARAMS = {
                 "default": 70,
                 "min": 55,
                 "max": 90,
+            },
+        ],
+    },
+    "macd_strategy": {
+        "display_name": "MACD Crossover",
+        "description": "Buy/sell on MACD line crossing the signal line",
+        "params": [
+            {
+                "key": "fast_period",
+                "label": "Fast EMA",
+                "type": "number",
+                "default": 12,
+                "min": 5,
+                "max": 50,
+            },
+            {
+                "key": "slow_period",
+                "label": "Slow EMA",
+                "type": "number",
+                "default": 26,
+                "min": 10,
+                "max": 100,
+            },
+            {
+                "key": "signal_period",
+                "label": "Signal",
+                "type": "number",
+                "default": 9,
+                "min": 3,
+                "max": 20,
+            },
+            {
+                "key": "risk_per_trade",
+                "label": "Risk %/trade",
+                "type": "number",
+                "default": 0.015,
+                "min": 0.005,
+                "max": 0.05,
+                "step": 0.005,
             },
         ],
     },
@@ -115,6 +153,7 @@ def discover_strategies():
                 not fname.endswith(".py")
                 or fname.startswith("_")
                 or fname.startswith("README")
+                or fname.startswith("Base")
             ):
                 continue
             module_path = folder.replace("/", ".") + "." + fname[:-3]
@@ -153,13 +192,6 @@ def load_all_strategies(broker):
         except Exception as e:
             log.error(f"Could not instantiate {name}: {e}")
     return strategies
-
-
-def load_strategy_by_name(name, broker):
-    discovered = discover_strategies()
-    if name not in discovered:
-        raise ValueError(f"Strategy '{name}' not found")
-    return discovered[name]["class"](broker)
 
 
 def get_strategy_info():

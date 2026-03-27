@@ -1,49 +1,57 @@
 import asyncio
-from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
-from datetime import datetime, date
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 
-from core.database import init_db, get_db, Trade, Position, BotStatus
+from core.database import init_db, get_db, Trade, BotStatus
 from core.risk_engine import risk_engine
 from core.logger import get_logger
+from core.strategy_loader import get_strategy_info
 from brokers.alpaca_adapter import alpaca_broker
 from bot import bot
 from backtest import Backtester
 
 log = get_logger("dashboard")
 
+app = FastAPI(title="Trading Bot", version="2.0.0")
 
-# ── Single lifespan ──────────────────────────────────────────────
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await init_db()
-    asyncio.create_task(bot.start())
-    yield
-    await bot.stop()
-
-
-# ── Single app instance ──────────────────────────────────────────
-app = FastAPI(title="Trading Bot Dashboard", version="1.0.0", lifespan=lifespan)
-
-# Static files (only if directory exists — won't crash if missing)
-import os
-
-if os.path.isdir("dashboard/static"):
+# Only mount static if directory exists
+if os.path.exists("dashboard/static"):
     app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
 
-# ── Health check (for keep-alive pings e.g. UptimeRobot) ────────
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+@app.on_event("startup")
+async def startup():
+    os.makedirs("data", exist_ok=True)
+    os.makedirs("logs", exist_ok=True)
+    await init_db()
+    log.info("=" * 50)
+    log.info("Dashboard started")
+    # Test Alpaca connection
+    try:
+        acc = alpaca_broker.get_account()
+        log.info(
+            f"✓ Alpaca connected | equity=${acc['equity']} | mode={alpaca_broker.mode}"
+        )
+    except Exception as e:
+        log.error(f"✗ Alpaca connection FAILED: {e}")
+    # Test strategy loader
+    try:
+        from core.strategy_loader import get_strategy_info
+
+        strats = get_strategy_info()
+        log.info(f"✓ Strategies loaded: {[s['name'] for s in strats]}")
+    except Exception as e:
+        log.error(f"✗ Strategy loader FAILED: {e}")
+    log.info("=" * 50)
 
 
-# ── Dashboard HTML ───────────────────────────────────────────────
+# ── HTML ──────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     with open("dashboard/index.html") as f:
@@ -54,7 +62,7 @@ async def dashboard():
     return response
 
 
-# ── API endpoints ────────────────────────────────────────────────
+# ── Account / Positions ───────────────────────────────────────────
 @app.get("/api/account")
 async def get_account():
     try:
@@ -107,7 +115,7 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         "is_running": status.is_running if status else False,
         "kill_switch": getattr(risk_engine, "_kill_switch", False),
         "mode": alpaca_broker.mode,
-        "message": status.message if status else "Unknown",
+        "message": status.message if status else "Stopped",
         "started_at": str(status.started_at) if status and status.started_at else None,
         "equity": account.get("equity", 0),
         "daily_pnl": risk_engine.daily_pnl,
@@ -115,15 +123,7 @@ async def get_status(db: AsyncSession = Depends(get_db)):
     }
 
 
-@app.get("/api/orders/recent")
-async def get_recent_orders():
-    try:
-        return alpaca_broker.get_recent_orders(limit=20)
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-# ── Bot controls ─────────────────────────────────────────────────
+# ── Bot controls ──────────────────────────────────────────────────
 @app.post("/api/bot/start")
 async def start_bot():
     if bot.running:
@@ -142,13 +142,13 @@ async def stop_bot():
 async def kill_switch_on():
     risk_engine.activate_kill_switch()
     await alpaca_broker.cancel_all_orders()
-    return {"message": "Kill switch ACTIVATED. All orders cancelled."}
+    return {"message": "Kill switch activated"}
 
 
 @app.post("/api/bot/kill-switch/off")
 async def kill_switch_off():
     risk_engine.deactivate_kill_switch()
-    return {"message": "Kill switch deactivated."}
+    return {"message": "Kill switch deactivated"}
 
 
 @app.post("/api/bot/emergency-close")
@@ -156,214 +156,42 @@ async def emergency_close():
     risk_engine.activate_kill_switch()
     await alpaca_broker.cancel_all_orders()
     await alpaca_broker.close_all_positions()
-    return {"message": "EMERGENCY: All positions closed, all orders cancelled."}
+    return {"message": "EMERGENCY: All positions closed"}
 
 
-# ── Backtest endpoints ───────────────────────────────────────────
-class BacktestRequest(BaseModel):
-    symbol: str
-    strategy: str  # ma_crossover | rsi | both
-    days: int = 365
-    cash: float = 10000
-    fast_ma: int = 50
-    slow_ma: int = 200
-    rsi_period: int = 14
-    oversold: int = 30
-    overbought: int = 70
+class StartSelectedRequest(BaseModel):
+    strategies: list
 
 
-@app.post("/api/backtest/run")
-async def run_backtest(req: BacktestRequest):
+@app.post("/api/bot/start-selected")
+async def start_selected(req: StartSelectedRequest):
+    if bot.running:
+        await bot.stop()
+        await asyncio.sleep(1)
+    asyncio.create_task(bot.start(strategy_names=req.strategies))
+    return {"message": f"Started: {', '.join(req.strategies)}"}
+
+
+# ── Strategies ────────────────────────────────────────────────────
+@app.get("/api/strategies")
+async def list_strategies():
     try:
-        results = []
-
-        if req.strategy in ("ma_crossover", "both"):
-            bt = Backtester(req.symbol, req.days, req.cash)
-            r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
-            r["strategy"] = "MA Crossover"
-            r["equity_curve"] = bt.equity_curve
-            r["trades"] = bt.trades
-            results.append(r)
-
-        if req.strategy in ("rsi", "both"):
-            bt2 = Backtester(req.symbol, req.days, req.cash)
-            r2 = bt2.run_rsi(req.rsi_period, req.oversold, req.overbought)
-            r2["strategy"] = "RSI"
-            r2["equity_curve"] = bt2.equity_curve
-            r2["trades"] = bt2.trades
-            results.append(r2)
-
-        return {"status": "ok", "results": results}
-
+        return {"strategies": get_strategy_info()}
     except Exception as e:
-        raise HTTPException(500, f"Backtest error: {str(e)}")
+        return {"strategies": [], "error": str(e)}
 
 
-@app.get("/api/backtest/symbols")
-async def get_symbols():
-    return {
-        "symbols": [
-            "AAPL",
-            "MSFT",
-            "GOOGL",
-            "AMZN",
-            "NVDA",
-            "TSLA",
-            "META",
-            "SPY",
-            "QQQ",
-            "AMD",
-            "NFLX",
-            "DIS",
-            "BABA",
-            "UBER",
-            "COIN",
-            "JPM",
-            "BAC",
-            "V",
-            "MA",
-            "WMT",
-            "SBUX",
-            "INTC",
-            "CRM",
-            "PYPL",
-        ]
-    }
+@app.post("/api/strategies/reload")
+async def reload_strategies():
+    names = bot.reload_strategies()
+    return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
 
 
-@app.get("/api/chart/{symbol}")
-async def get_price_chart(symbol: str, days: int = 365):
-    from datetime import datetime, timedelta
-    import pandas as pd
-    import ta
-
-    try:
-        bars = alpaca_broker.get_bars(symbol, timeframe="1Day", limit=days)
-        df = pd.DataFrame(bars)
-        df["close"] = pd.to_numeric(df["close"])
-        df["open"] = pd.to_numeric(df["open"])
-        df["high"] = pd.to_numeric(df["high"])
-        df["low"] = pd.to_numeric(df["low"])
-        df["ma50"] = df["close"].rolling(50).mean()
-        df["ma200"] = df["close"].rolling(200).mean()
-        df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
-        df["ts"] = df["timestamp"].astype(str).str[:10]
-        df = df.dropna()
-        return {
-            "dates": df["ts"].tolist(),
-            "close": df["close"].round(2).tolist(),
-            "open": df["open"].round(2).tolist(),
-            "high": df["high"].round(2).tolist(),
-            "low": df["low"].round(2).tolist(),
-            "ma50": df["ma50"].round(2).tolist(),
-            "ma200": df["ma200"].round(2).tolist(),
-            "rsi": df["rsi"].round(2).tolist(),
-        }
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/chart2/{symbol}")
-async def get_price_chart2(symbol: str, days: int = 365, timeframe: str = "1Day"):
-    import pandas as pd
-    import ta
-    from datetime import datetime, timedelta
-
-    try:
-        tf_map = {"1D": "1Day", "1W": "1Week", "1Day": "1Day", "1Week": "1Week"}
-        tf = tf_map.get(timeframe, "1Day")
-        start = (datetime.now() - timedelta(days=days + 300)).strftime("%Y-%m-%d")
-        df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=days).df
-        df = df.reset_index()
-        df.columns = [c.lower() for c in df.columns]
-        df["ts"] = df["timestamp"].astype(str).str[:10]
-        df["close"] = pd.to_numeric(df["close"])
-        df["open"] = pd.to_numeric(df["open"])
-        df["high"] = pd.to_numeric(df["high"])
-        df["low"] = pd.to_numeric(df["low"])
-        n = len(df)
-
-        def safe_ma(period):
-            if n >= period:
-                return (
-                    df["close"]
-                    .rolling(period)
-                    .mean()
-                    .round(2)
-                    .where(df["close"].rolling(period).mean().notna(), None)
-                    .tolist()
-                )
-            return [None] * n
-
-        df["rsi"] = (
-            ta.momentum.RSIIndicator(df["close"], window=14).rsi() if n >= 14 else None
-        )
-        return {
-            "dates": df["ts"].tolist(),
-            "close": df["close"].round(2).tolist(),
-            "open": df["open"].round(2).tolist(),
-            "high": df["high"].round(2).tolist(),
-            "low": df["low"].round(2).tolist(),
-            "ma21": safe_ma(21),
-            "ma50": safe_ma(50),
-            "ma200": safe_ma(200),
-            "rsi": df["rsi"].round(2).tolist() if df["rsi"] is not None else [None] * n,
-            "count": n,
-        }
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/chart3/{symbol}")
-async def get_chart3(symbol: str, days: int = 365, timeframe: str = "1Day"):
-    import pandas as pd
-    import ta
-    from datetime import datetime, timedelta
-
-    try:
-        tf_map = {"1D": "1Day", "1W": "1Week", "1Day": "1Day", "1Week": "1Week"}
-        tf = tf_map.get(timeframe, "1Day")
-        days_back = days * 7 if tf == "1Week" else days
-        start = (datetime.now() - timedelta(days=days_back + 300)).strftime("%Y-%m-%d")
-        df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=days + 300).df
-        df = df.reset_index()
-        df.columns = [str(c).lower() for c in df.columns]
-        ts_col = [c for c in df.columns if "time" in c]
-        if ts_col:
-            df["ts"] = df[ts_col[0]].astype(str).str[:10]
-        else:
-            df["ts"] = df.index.astype(str).str[:10]
-        df["close"] = pd.to_numeric(df["close"])
-        n = len(df)
-
-        def safe_ma(p):
-            if n >= p:
-                vals = df["close"].rolling(p).mean().tolist()
-                return [round(v, 2) if v == v else None for v in vals]
-            return [None] * n
-
-        rsi_vals = [None] * n
-        if n >= 14:
-            rsi_series = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
-            rsi_vals = [round(v, 2) if v == v else None for v in rsi_series.tolist()]
-        return {
-            "dates": df["ts"].tolist(),
-            "close": df["close"].round(2).tolist(),
-            "ma21": safe_ma(21),
-            "ma50": safe_ma(50),
-            "ma200": safe_ma(200),
-            "rsi": rsi_vals,
-            "count": n,
-        }
-    except Exception as e:
-        raise HTTPException(500, f"Chart error: {str(e)}")
-
-
+# ── Chart ─────────────────────────────────────────────────────────
 @app.get("/api/chart4/{symbol}")
-async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
+async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
     import pandas as pd
     import ta
-    from datetime import datetime, timedelta
 
     try:
         tf_map = {
@@ -433,33 +261,40 @@ async def get_chart4(symbol: str, days: int = 365, timeframe: str = "1Day"):
         raise HTTPException(500, f"Chart error: {str(e)}")
 
 
-# ── Strategy management ──────────────────────────────────────────
-def get_strategy_info():
-    """Return info about currently loaded strategies."""
-    return [
-        {"name": s.name, "description": getattr(s, "description", "No description")}
-        for s in bot.strategies
-    ]
+# ── Backtest ──────────────────────────────────────────────────────
+class BacktestRequest(BaseModel):
+    symbol: str
+    strategy: str = "both"
+    days: int = 365
+    cash: float = 10000
+    fast_ma: int = 50
+    slow_ma: int = 200
+    rsi_period: int = 14
+    oversold: int = 30
+    overbought: int = 70
 
 
-@app.get("/api/strategies")
-async def list_strategies():
-    return {"strategies": get_strategy_info()}
-
-
-@app.post("/api/strategies/reload")
-async def reload_strategies():
-    names = bot.reload_strategies() if hasattr(bot, "reload_strategies") else []
-    return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
-
-
-@app.post("/api/bot/start-strategy/{name}")
-async def start_single_strategy(name: str):
-    if bot.running:
-        await bot.stop()
-        await asyncio.sleep(1)
-    asyncio.create_task(bot.start(strategy_names=[name]))
-    return {"message": f"Started strategy: {name}"}
+@app.post("/api/backtest/run")
+async def run_backtest(req: BacktestRequest):
+    try:
+        results = []
+        if req.strategy in ("ma_crossover", "both"):
+            bt = Backtester(req.symbol, req.days, req.cash)
+            r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
+            r["strategy"] = "MA Crossover"
+            r["equity_curve"] = bt.equity_curve
+            r["trades"] = bt.trades
+            results.append(r)
+        if req.strategy in ("rsi", "rsi_strategy", "both"):
+            bt2 = Backtester(req.symbol, req.days, req.cash)
+            r2 = bt2.run_rsi(req.rsi_period, req.oversold, req.overbought)
+            r2["strategy"] = "RSI"
+            r2["equity_curve"] = bt2.equity_curve
+            r2["trades"] = bt2.trades
+            results.append(r2)
+        return {"status": "ok", "results": results}
+    except Exception as e:
+        raise HTTPException(500, f"Backtest error: {str(e)}")
 
 
 class StrategyBacktestRequest(BaseModel):
@@ -472,12 +307,15 @@ class StrategyBacktestRequest(BaseModel):
     rsi_period: int = 14
     oversold: int = 30
     overbought: int = 70
+    ema_fast: int = 9
+    ema_mid: int = 21
+    ema_slow: int = 50
+    risk_per_trade: float = 0.01
 
 
 @app.post("/api/backtest/strategy")
 async def backtest_strategy(req: StrategyBacktestRequest):
     try:
-        from datetime import datetime, timedelta
         import pandas as pd
 
         start = (datetime.now() - timedelta(days=req.days + 300)).strftime("%Y-%m-%d")
@@ -504,38 +342,25 @@ async def backtest_strategy(req: StrategyBacktestRequest):
             df["tr3"] = abs(df["low"] - df["close"].shift())
             df["atr"] = df[["tr1", "tr2", "tr3"]].max(axis=1).rolling(14).mean()
             df = df.dropna().reset_index(drop=True)
-
             cash = req.cash
             shares = 0
             trades = []
             equity_curve = []
             entry_price = 0
-
             for i in range(1, len(df)):
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = row["close"]
                 ts = row["timestamp"]
-                bullish_trend = price > row["ema200"] and row["ema50"] > row["ema200"]
-                pullback = abs(price - row["ema21"]) / price < 0.015
-                bullish_cross = (
-                    prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
-                )
-                valid_vol = row["atr"] / price > 0.01
-                bearish_cross = (
-                    prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
-                )
-                trend_break = price < row["ema200"]
-
-                if (
-                    bullish_trend
-                    and pullback
-                    and bullish_cross
-                    and valid_vol
-                    and shares == 0
-                ):
-                    risk_ps = 1.5 * row["atr"]
-                    qty = int((cash * 0.01) / risk_ps) if risk_ps > 0 else 0
+                bull = price > row["ema200"] and row["ema50"] > row["ema200"]
+                pb = abs(price - row["ema21"]) / price < 0.015
+                bcross = prev["ema9"] < prev["ema21"] and row["ema9"] > row["ema21"]
+                vvol = row["atr"] / price > 0.01
+                bear = prev["ema9"] > prev["ema21"] and row["ema9"] < row["ema21"]
+                tbrk = price < row["ema200"]
+                if bull and pb and bcross and vvol and shares == 0:
+                    rps = 1.5 * row["atr"]
+                    qty = int((cash * req.risk_per_trade) / rps) if rps > 0 else 0
                     qty = min(qty, int(cash * 0.95 / price))
                     if qty > 0:
                         cash -= qty * price
@@ -551,11 +376,8 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                                 "value": qty * price,
                             }
                         )
-
                 elif shares > 0 and (
-                    bearish_cross
-                    or trend_break
-                    or price < entry_price - 1.5 * row["atr"]
+                    bear or tbrk or price < entry_price - 1.5 * row["atr"]
                 ):
                     pnl = (price - entry_price) * shares
                     cash += shares * price
@@ -571,16 +393,12 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                         }
                     )
                     shares = 0
-
                 equity_curve.append(
                     {"date": ts, "equity": round(cash + shares * price, 2)}
                 )
-
-            final_equity = cash + shares * (df["close"].iloc[-1] if shares > 0 else 0)
+            final = cash + shares * (df["close"].iloc[-1] if shares > 0 else 0)
             sells = [t for t in trades if t["side"] == "SELL"]
             wins = [t for t in sells if t.get("pnl", 0) > 0]
-            total_pnl = sum(t.get("pnl", 0) for t in sells)
-
             return {
                 "status": "ok",
                 "results": [
@@ -588,11 +406,11 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                         "strategy": "Institutional EMA",
                         "symbol": req.symbol,
                         "starting_cash": req.cash,
-                        "final_equity": round(final_equity, 2),
+                        "final_equity": round(final, 2),
                         "total_return_pct": round(
-                            (final_equity - req.cash) / req.cash * 100, 2
+                            (final - req.cash) / req.cash * 100, 2
                         ),
-                        "total_pnl": round(total_pnl, 2),
+                        "total_pnl": round(sum(t.get("pnl", 0) for t in sells), 2),
                         "total_trades": len(trades),
                         "winning_trades": len(wins),
                         "losing_trades": len(sells) - len(wins),
@@ -604,30 +422,149 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                     }
                 ],
             }
-
         else:
             bt = Backtester(req.symbol, req.days, req.cash)
             if req.strategy == "ma_crossover":
                 r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
+                r["strategy"] = "MA Crossover"
             else:
                 r = bt.run_rsi(req.rsi_period, req.oversold, req.overbought)
-            r["strategy"] = req.strategy
+                r["strategy"] = "RSI"
             r["equity_curve"] = bt.equity_curve
             r["trades"] = bt.trades
             return {"status": "ok", "results": [r]}
-
     except Exception as e:
         raise HTTPException(500, f"Strategy backtest error: {str(e)}")
 
 
-class StartSelectedRequest(BaseModel):
-    strategies: list
+# ── Multi-stock watchlist ─────────────────────────────
+@app.get("/api/watchlist")
+async def get_watchlist(
+    symbols: str = "AAPL,MSFT,NVDA,TSLA,SPY", days: int = 30, timeframe: str = "1Day"
+):
+    """Get chart data for multiple symbols at once for the live watchlist."""
+    import pandas as pd
+
+    results = {}
+    sym_list = [s.strip().upper() for s in symbols.split(",")][:8]  # max 8
+    tf_map = {
+        "5min": "5Min",
+        "15min": "15Min",
+        "1hr": "1Hour",
+        "4hr": "4Hour",
+        "1D": "1Day",
+        "1W": "1Week",
+    }
+    tf = tf_map.get(timeframe, "1Day")
+    for sym in sym_list:
+        try:
+            start = (datetime.now() - timedelta(days=days + 10)).strftime("%Y-%m-%d")
+            df = alpaca_broker.api.get_bars(sym, tf, start=start, limit=days + 10).df
+            df = df.reset_index()
+            df.columns = [str(c).lower() for c in df.columns]
+            ts_col = next((c for c in df.columns if "time" in c), None)
+            if ts_col:
+                df["ts"] = df[ts_col].astype(str).str[:10]
+            df["close"] = pd.to_numeric(df["close"])
+            cl = df["close"].round(2).tolist()
+            last = cl[-1] if cl else 0
+            first = cl[0] if cl else 0
+            chg_pct = round((last - first) / first * 100, 2) if first else 0
+            results[sym] = {
+                "dates": df["ts"].tolist(),
+                "close": cl,
+                "open": pd.to_numeric(df["open"]).round(2).tolist()
+                if "open" in df.columns
+                else [],
+                "high": pd.to_numeric(df["high"]).round(2).tolist()
+                if "high" in df.columns
+                else [],
+                "low": pd.to_numeric(df["low"]).round(2).tolist()
+                if "low" in df.columns
+                else [],
+                "volume": df["volume"].round(0).tolist()
+                if "volume" in df.columns
+                else [],
+                "last": last,
+                "chg_pct": chg_pct,
+                "ma50": df["close"].rolling(50).mean().round(2).tolist()
+                if len(df) >= 50
+                else [None] * len(df),
+            }
+        except Exception as e:
+            results[sym] = {
+                "error": str(e),
+                "last": 0,
+                "chg_pct": 0,
+                "dates": [],
+                "close": [],
+            }
+    return results
 
 
-@app.post("/api/bot/start-selected")
-async def start_selected_strategies(req: StartSelectedRequest):
-    if bot.running:
-        await bot.stop()
-        await asyncio.sleep(1)
-    asyncio.create_task(bot.start(strategy_names=req.strategies))
-    return {"message": f"Started: {', '.join(req.strategies)}"}
+@app.get("/api/quote/{symbol}")
+async def get_quote(symbol: str):
+    """Get latest price for a symbol."""
+    try:
+        price = await alpaca_broker.get_latest_price(symbol)
+        return {"symbol": symbol, "price": price}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── Health & Debug ────────────────────────────────────
+@app.get("/api/health")
+async def health():
+    """Quick health check - use this to verify server is alive"""
+    import os
+
+    return {
+        "status": "ok",
+        "version": "2.1",
+        "alpaca_key_set": bool(
+            os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
+        ),
+        "mode": alpaca_broker.mode,
+        "endpoints": [
+            "/api/status",
+            "/api/account",
+            "/api/positions",
+            "/api/strategies",
+            "/api/chart4/{symbol}",
+            "/api/backtest/run",
+            "/api/backtest/strategy",
+        ],
+    }
+
+
+@app.get("/api/debug")
+async def debug():
+    """Full debug info - check this when something is wrong"""
+    import os, sys
+
+    checks = {}
+    try:
+        acc = alpaca_broker.get_account()
+        checks["alpaca"] = f"OK equity={acc['equity']}"
+    except Exception as e:
+        checks["alpaca"] = f"FAIL: {str(e)}"
+
+    try:
+        from core.strategy_loader import get_strategy_info
+
+        strats = get_strategy_info()
+        checks["strategies"] = f"OK found {len(strats)}: {[s['name'] for s in strats]}"
+    except Exception as e:
+        checks["strategies"] = f"FAIL: {str(e)}"
+
+    checks["bot_running"] = bot.running
+    checks["kill_switch"] = getattr(risk_engine, "_kill_switch", False)
+    checks["python"] = sys.version
+    checks["env_keys"] = {
+        "ALPACA_API_KEY": bool(os.getenv("ALPACA_API_KEY")),
+        "APCA_API_KEY_ID": bool(os.getenv("APCA_API_KEY_ID")),
+        "ALPACA_SECRET_KEY": bool(os.getenv("ALPACA_SECRET_KEY")),
+        "APCA_API_SECRET_KEY": bool(os.getenv("APCA_API_SECRET_KEY")),
+        "ALPACA_MODE": os.getenv("ALPACA_MODE", "not set"),
+    }
+    return checks

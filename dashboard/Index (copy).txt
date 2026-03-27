@@ -1,0 +1,2102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trading Bot</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b0e17;
+        color: #e2e8f0;
+        min-height: 100vh;
+      }
+      .hdr {
+        background: #111522;
+        border-bottom: 1px solid #1e2740;
+        padding: 11px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+      .hdr h1 {
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .bdg {
+        padding: 2px 9px;
+        border-radius: 20px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .bdg-paper {
+        background: #0d2540;
+        color: #63b3ed;
+        border: 1px solid #1a4a7a;
+      }
+      .bdg-live {
+        background: #2d0f0f;
+        color: #fc8181;
+        border: 1px solid #6b1f1f;
+      }
+      .sp {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: #a0aec0;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .don {
+        background: #48bb78;
+        box-shadow: 0 0 6px #48bb7888;
+      }
+      .doff {
+        background: #4a5568;
+      }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        padding: 10px 14px 0;
+        border-bottom: 1px solid #1e2740;
+      }
+      .tab {
+        padding: 7px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border-radius: 7px 7px 0 0;
+        border: 1px solid transparent;
+        border-bottom: none;
+      }
+      .tab.act {
+        color: #e2e8f0;
+        background: #151b2e;
+        border-color: #1e2740;
+        margin-bottom: -1px;
+      }
+      .tc {
+        display: none;
+      }
+      .tc.act {
+        display: block;
+      }
+      /* cards */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
+        padding: 14px;
+      }
+      .card {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .cl {
+        font-size: 10px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 6px;
+      }
+      .cv {
+        font-size: 20px;
+        font-weight: 800;
+        color: #fff;
+      }
+      .g {
+        color: #68d391;
+      }
+      .r {
+        color: #fc8181;
+      }
+      .b {
+        color: #63b3ed;
+      }
+      /* buttons */
+      .btn {
+        padding: 7px 13px;
+        border-radius: 7px;
+        border: none;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .btn:hover {
+        opacity: 0.85;
+      }
+      .go {
+        background: #1a4731;
+        color: #9ae6b4;
+        border: 1px solid #276749;
+      }
+      .stp {
+        background: #1e2535;
+        color: #a0aec0;
+        border: 1px solid #2d3748;
+      }
+      .wa {
+        background: #3d1c0a;
+        color: #fbd38d;
+        border: 1px solid #7b341e;
+      }
+      .dg {
+        background: #2d0f0f;
+        color: #feb2b2;
+        border: 1px solid #742a2a;
+      }
+      .inf {
+        background: #0d2540;
+        color: #90cdf4;
+        border: 1px solid #1a4a7a;
+      }
+      .pur {
+        background: #2d1f6e;
+        color: #c3b1fd;
+        border: 1px solid #553c9a;
+      }
+      .ka {
+        margin: 0 14px 10px;
+        padding: 9px 13px;
+        background: #2d0f0f;
+        border: 1px solid #742a2a;
+        border-radius: 8px;
+        color: #fc8181;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      /* tables */
+      .sec {
+        padding: 0 14px 18px;
+      }
+      .st2 {
+        font-size: 10px;
+        font-weight: 700;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+      }
+      .tw {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th {
+        text-align: left;
+        padding: 8px 11px;
+        color: #4a5568;
+        font-size: 10px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #1e2740;
+        font-weight: 600;
+      }
+      td {
+        padding: 8px 11px;
+        border-bottom: 1px solid #141a28;
+        color: #cbd5e0;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .buy {
+        color: #68d391;
+        font-weight: 700;
+      }
+      .sell {
+        color: #fc8181;
+        font-weight: 700;
+      }
+      .er td {
+        text-align: center;
+        color: #2d3748;
+        padding: 22px;
+      }
+      /* strategy cards */
+      .strat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+        padding: 0 14px 14px;
+      }
+      .strat-card {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 14px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .strat-card:hover {
+        border-color: #2d3748;
+      }
+      .strat-card.selected {
+        border-color: #553c9a;
+        background: #160d3a;
+      }
+      .strat-card.running {
+        border-color: #276749;
+        background: #0d2010;
+      }
+      .strat-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .strat-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .strat-desc {
+        font-size: 11px;
+        color: #4a5568;
+        margin-bottom: 10px;
+      }
+      .strat-badge {
+        padding: 2px 8px;
+        border-radius: 5px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .sb-stocks {
+        background: #0d2540;
+        color: #63b3ed;
+        border: 1px solid #1a4a7a;
+      }
+      .sb-running {
+        background: #1a4731;
+        color: #9ae6b4;
+        border: 1px solid #276749;
+      }
+      .sb-stopped {
+        background: #1e2535;
+        color: #718096;
+        border: 1px solid #2d3748;
+      }
+      .strat-params {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .sp-field {
+        background: #0b0e17;
+        border: 1px solid #1e2740;
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+      .sp-label {
+        font-size: 9px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 2px;
+      }
+      .sp-input {
+        width: 100%;
+        background: transparent;
+        border: none;
+        color: #e2e8f0;
+        font-size: 12px;
+        font-weight: 600;
+        outline: none;
+      }
+      /* live controls */
+      .live-controls {
+        padding: 14px;
+      }
+      .lc-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+        align-items: center;
+      }
+      .run-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .rb-run {
+        background: #1a4731;
+        color: #9ae6b4;
+        border: 1px solid #276749;
+      }
+      .rb-stop {
+        background: #1e2535;
+        color: #718096;
+        border: 1px solid #2d3748;
+      }
+      /* chart */
+      .cp {
+        padding: 10px 14px;
+      }
+      .crow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .si {
+        padding: 6px 9px;
+        background: #0b0e17;
+        border: 1px solid #1e2740;
+        border-radius: 7px;
+        color: #e2e8f0;
+        font-size: 14px;
+        font-weight: 700;
+        outline: none;
+        width: 80px;
+        text-transform: uppercase;
+      }
+      .si:focus {
+        border-color: #553c9a;
+      }
+      .pill {
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid #1e2740;
+        background: #111522;
+        color: #718096;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .pill.pon {
+        border-color: #553c9a;
+        color: #c3b1fd;
+        background: #160d3a;
+      }
+      .pill.tfo {
+        border-color: #1a4a7a;
+        color: #63b3ed;
+        background: #0d2540;
+      }
+      .pill.cto {
+        border-color: #276749;
+        color: #9ae6b4;
+        background: #1a4731;
+      }
+      .cbox {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 10px;
+        position: relative;
+      }
+      .ctit {
+        font-size: 10px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 8px;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .li {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #a0aec0;
+        cursor: pointer;
+        padding: 2px 7px;
+        border-radius: 5px;
+        border: 1px solid #1e2740;
+      }
+      .li.off {
+        opacity: 0.3;
+      }
+      .ld {
+        width: 12px;
+        height: 3px;
+        border-radius: 2px;
+      }
+      .xtip {
+        position: absolute;
+        background: #1a1d27;
+        border: 1px solid #2d3748;
+        border-radius: 7px;
+        padding: 8px 10px;
+        font-size: 11px;
+        pointer-events: none;
+        z-index: 50;
+        min-width: 130px;
+        display: none;
+      }
+      .xrow {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: #e2e8f0;
+        margin-bottom: 2px;
+      }
+      .xhdr {
+        color: #718096;
+        font-size: 10px;
+        margin-bottom: 4px;
+      }
+      .xdot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 3px;
+      }
+      .spin {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid #1e2740;
+        border-top-color: #7c3aed;
+        border-radius: 50%;
+        animation: sp 0.7s linear infinite;
+      }
+      @keyframes sp {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .trend-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 3px 8px;
+        border-radius: 5px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .tbull {
+        background: #1a4731;
+        color: #9ae6b4;
+        border: 1px solid #276749;
+      }
+      .tbear {
+        background: #2d0f0f;
+        color: #fc8181;
+        border: 1px solid #742a2a;
+      }
+      .tside {
+        background: #1e2535;
+        color: #a0aec0;
+        border: 1px solid #2d3748;
+      }
+      /* backtest */
+      .bf {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 14px;
+        margin: 14px;
+      }
+      .fg {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .field label {
+        display: block;
+        font-size: 10px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        padding: 7px 9px;
+        background: #0b0e17;
+        border: 1px solid #1e2740;
+        border-radius: 7px;
+        color: #e2e8f0;
+        font-size: 13px;
+        outline: none;
+      }
+      .field input:focus,
+      .field select:focus {
+        border-color: #553c9a;
+      }
+      .field select option {
+        background: #111522;
+      }
+      .rbtn {
+        background: #2d1f6e;
+        color: #c3b1fd;
+        border: 1px solid #553c9a;
+        font-size: 13px;
+        padding: 9px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .rbtn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      /* bt results */
+      .bt-cmp {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin: 0 14px 14px;
+      }
+      .bt-side {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .stag {
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .tma {
+        background: #0d2540;
+        color: #63b3ed;
+        border: 1px solid #1a4a7a;
+      }
+      .trsi {
+        background: #1a2d0f;
+        color: #9ae6b4;
+        border: 1px solid #276749;
+      }
+      .tema {
+        background: #2d1f6e;
+        color: #c3b1fd;
+        border: 1px solid #553c9a;
+      }
+      .rcard {
+        background: #0b0e17;
+        border: 1px solid #1e2740;
+        border-radius: 8px;
+        padding: 9px;
+        margin-bottom: 7px;
+      }
+      .rl {
+        font-size: 10px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 2px;
+      }
+      .rv {
+        font-size: 16px;
+        font-weight: 800;
+      }
+      .loading {
+        text-align: center;
+        padding: 36px;
+        color: #718096;
+        font-size: 13px;
+      }
+      .bt-full {
+        margin: 0 14px 14px;
+      }
+      /* dynamic params */
+      .dyn-params {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #1e2740;
+      }
+      .notice {
+        padding: 10px 14px;
+        background: #0d1e3a;
+        border: 1px solid #1a4a7a;
+        border-radius: 8px;
+        margin: 0 14px 12px;
+        font-size: 12px;
+        color: #63b3ed;
+      }
+      @media (max-width: 600px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .fg {
+          grid-template-columns: 1fr 1fr;
+        }
+        .bt-cmp {
+          grid-template-columns: 1fr;
+        }
+        .strat-params {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hdr">
+      <h1>Trading Bot</h1>
+      <div style="display: flex; align-items: center; gap: 8px">
+        <div class="sp">
+          <div class="dot doff" id="dot"></div>
+          <span id="stxt">Offline</span>
+        </div>
+        <span class="bdg bdg-paper" id="mbdg">PAPER</span>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab act" onclick="sw('live')">Live</div>
+      <div class="tab" onclick="sw('chart')">Chart</div>
+      <div class="tab" onclick="sw('backtest')">Backtest</div>
+    </div>
+
+    <!-- ══════════════════════════ LIVE ══════════════════════════ -->
+    <div class="tc act" id="tab-live">
+      <div id="ka" class="ka" style="display: none; margin-top: 10px">
+        KILL SWITCH ACTIVE — All trading halted
+      </div>
+
+      <!-- Stats -->
+      <div class="grid">
+        <div class="card">
+          <div class="cl">Portfolio</div>
+          <div class="cv" id="eq">—</div>
+        </div>
+        <div class="card">
+          <div class="cl">Daily P&L</div>
+          <div class="cv" id="dpnl">—</div>
+        </div>
+        <div class="card">
+          <div class="cl">Positions</div>
+          <div class="cv" id="opos">—</div>
+        </div>
+        <div class="card">
+          <div class="cl">Cash</div>
+          <div class="cv" id="cash">—</div>
+        </div>
+      </div>
+
+      <!-- Bot controls -->
+      <div class="live-controls">
+        <div class="lc-row">
+          <button class="btn go" onclick="startSelected()">
+            Start Selected
+          </button>
+          <button class="btn go" onclick="ba('start')">Start All</button>
+          <button class="btn stp" onclick="ba('stop')">Stop Bot</button>
+          <button class="btn wa" onclick="ba('kill-switch/on')">
+            Kill Switch
+          </button>
+          <button class="btn inf" onclick="ba('kill-switch/off')">
+            Resume
+          </button>
+          <button class="btn dg" onclick="ec()">Emergency Close</button>
+          <button
+            class="btn inf"
+            onclick="reloadStrategies()"
+            style="margin-left: auto"
+          >
+            Reload Strategies
+          </button>
+        </div>
+        <div
+          id="bot-status-msg"
+          style="font-size: 11px; color: #4a5568; margin-bottom: 10px"
+        ></div>
+      </div>
+
+      <!-- Strategy selector -->
+      <div style="padding: 0 14px 10px">
+        <div
+          style="
+            font-size: 10px;
+            font-weight: 700;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 10px;
+          "
+        >
+          Select strategies to run — click to toggle, edit parameters inline
+        </div>
+        <div class="strat-grid" id="live-strat-grid">
+          <div style="color: #4a5568; font-size: 12px; padding: 20px">
+            Loading strategies...
+          </div>
+        </div>
+      </div>
+
+      <!-- Positions -->
+      <div class="sec">
+        <div class="st2">Open positions</div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Qty</th>
+                <th>Entry</th>
+                <th>Current</th>
+                <th>P&L</th>
+                <th>%</th>
+                <th>Strategy</th>
+              </tr>
+            </thead>
+            <tbody id="pb">
+              <tr class="er">
+                <td colspan="7">No open positions</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Trades -->
+      <div class="sec">
+        <div class="st2">Recent trades</div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Value</th>
+                <th>Strategy</th>
+              </tr>
+            </thead>
+            <tbody id="tb">
+              <tr class="er">
+                <td colspan="7">No trades yet</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════ CHART ══════════════════════════ -->
+    <div class="tc" id="tab-chart">
+      <div class="cp">
+        <div class="crow">
+          <input
+            class="si"
+            id="csym"
+            value="NVDA"
+            oninput="this.value=this.value.toUpperCase()"
+          />
+          <button
+            class="btn inf"
+            onclick="loadChart()"
+            style="padding: 6px 12px; font-size: 12px"
+          >
+            Load
+          </button>
+          <span
+            id="pdisplay"
+            style="font-size: 14px; font-weight: 800; color: #fff"
+          ></span>
+          <span id="spwrap" style="display: none"
+            ><div class="spin"></div
+          ></span>
+        </div>
+        <div class="crow">
+          <span
+            style="font-size: 10px; color: #4a5568; text-transform: uppercase"
+            >TF:</span
+          >
+          <button class="pill tfo" id="tf-5min" onclick="setTF('5min',this)">
+            5m
+          </button>
+          <button class="pill" id="tf-15min" onclick="setTF('15min',this)">
+            15m
+          </button>
+          <button class="pill" id="tf-1hr" onclick="setTF('1hr',this)">
+            1h
+          </button>
+          <button class="pill" id="tf-4hr" onclick="setTF('4hr',this)">
+            4h
+          </button>
+          <button class="pill" id="tf-1D" onclick="setTF('1D',this)">1D</button>
+          <button class="pill" id="tf-1W" onclick="setTF('1W',this)">1W</button>
+          <span style="font-size: 10px; color: #4a5568; margin-left: 4px"
+            >Range:</span
+          >
+          <select
+            id="cdays"
+            onchange="loadChart()"
+            style="
+              padding: 4px 7px;
+              background: #0b0e17;
+              border: 1px solid #1e2740;
+              border-radius: 6px;
+              color: #e2e8f0;
+              font-size: 11px;
+              outline: none;
+            "
+          >
+            <option value="3">3d</option>
+            <option value="7">1w</option>
+            <option value="30">1m</option>
+            <option value="90">3m</option>
+            <option value="180">6m</option>
+            <option value="365" selected>1y</option>
+            <option value="730">2y</option>
+            <option value="1460">4y</option>
+            <option value="2190">6y</option>
+            <option value="2920">8y</option>
+          </select>
+        </div>
+        <div class="crow">
+          <span
+            style="font-size: 10px; color: #4a5568; text-transform: uppercase"
+            >Type:</span
+          >
+          <button class="pill cto" id="ct-line" onclick="setCT('line',this)">
+            Line
+          </button>
+          <button class="pill" id="ct-candle" onclick="setCT('candle',this)">
+            Candle
+          </button>
+          <span style="font-size: 10px; color: #4a5568; margin-left: 4px"
+            >MA:</span
+          >
+          <button class="pill pon" id="tog-ma21" onclick="togMA('ma21')">
+            21
+          </button>
+          <button class="pill pon" id="tog-ma50" onclick="togMA('ma50')">
+            50
+          </button>
+          <button class="pill pon" id="tog-ma200" onclick="togMA('ma200')">
+            200
+          </button>
+          <span style="font-size: 10px; color: #4a5568; margin-left: 4px"
+            >Quick:</span
+          >
+          <button class="pill" onclick="ss('AAPL')">AAPL</button>
+          <button class="pill" onclick="ss('MSFT')">MSFT</button>
+          <button class="pill" onclick="ss('NVDA')">NVDA</button>
+          <button class="pill" onclick="ss('TSLA')">TSLA</button>
+          <button class="pill" onclick="ss('SPY')">SPY</button>
+          <button class="pill" onclick="ss('AMD')">AMD</button>
+          <button class="pill" onclick="ss('META')">META</button>
+        </div>
+        <div class="legend" id="lgnd"></div>
+        <div class="cbox">
+          <div class="ctit">
+            <span id="clabel">Price</span><span id="trbdg"></span>
+          </div>
+          <div id="xtip" class="xtip"></div>
+          <canvas
+            id="pc"
+            height="240"
+            style="cursor: crosshair; display: block; width: 100%"
+          ></canvas>
+        </div>
+        <div class="cbox">
+          <div class="ctit">
+            <span>RSI (14)</span>
+            <span style="font-size: 11px"
+              ><span style="color: #fc8181">OB&gt;70</span>
+              <span style="color: #68d391">OS&lt;30</span>
+              <span id="rsiv" style="color: #b794f4; font-weight: 700"></span
+            ></span>
+          </div>
+          <canvas id="rc" height="100"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════ BACKTEST ══════════════════════════ -->
+    <div class="tc" id="tab-backtest">
+      <div class="bf">
+        <!-- Top row: symbol + lookback + cash -->
+        <div class="fg">
+          <div class="field">
+            <label>Symbol</label>
+            <input
+              type="text"
+              id="bsym"
+              value="AAPL"
+              oninput="this.value=this.value.toUpperCase()"
+            />
+          </div>
+          <div class="field">
+            <label>Lookback</label>
+            <select id="bdays">
+              <option value="90">3 months</option>
+              <option value="180">6 months</option>
+              <option value="365" selected>1 year</option>
+              <option value="730">2 years</option>
+              <option value="1460">4 years</option>
+              <option value="2190">6 years</option>
+              <option value="2920">8 years</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Cash ($)</label>
+            <input type="number" id="bcash" value="10000" min="100" />
+          </div>
+        </div>
+
+        <!-- Strategy picker -->
+        <div
+          style="
+            font-size: 10px;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin-bottom: 8px;
+            font-weight: 600;
+          "
+        >
+          Strategy — select one or compare both MA + RSI
+        </div>
+        <div
+          id="bt-strat-pills"
+          style="display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px"
+        >
+          <div style="color: #4a5568; font-size: 12px">Loading...</div>
+        </div>
+
+        <!-- Dynamic parameters for selected strategy -->
+        <div id="bt-dyn-params" class="dyn-params" style="display: none"></div>
+
+        <!-- Quick symbols -->
+        <div
+          style="
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            margin-top: 12px;
+            margin-bottom: 12px;
+          "
+        >
+          <span
+            style="font-size: 10px; color: #4a5568; text-transform: uppercase"
+            >Quick:</span
+          >
+          <button class="pill" onclick="bss('AAPL')">AAPL</button>
+          <button class="pill" onclick="bss('MSFT')">MSFT</button>
+          <button class="pill" onclick="bss('NVDA')">NVDA</button>
+          <button class="pill" onclick="bss('TSLA')">TSLA</button>
+          <button class="pill" onclick="bss('GOOGL')">GOOGL</button>
+          <button class="pill" onclick="bss('AMZN')">AMZN</button>
+          <button class="pill" onclick="bss('SPY')">SPY</button>
+          <button class="pill" onclick="bss('QQQ')">QQQ</button>
+          <button class="pill" onclick="bss('META')">META</button>
+          <button class="pill" onclick="bss('AMD')">AMD</button>
+        </div>
+        <button class="rbtn" id="rbtn" onclick="runBT()">Run Backtest</button>
+      </div>
+      <div id="btout"></div>
+    </div>
+
+    <script>
+      /* ══ GLOBALS ══ */
+      let allStrategies = [];
+      let selectedLiveStrategies = new Set();
+      let selectedBTStrategy = "both";
+      let pChart = null,
+        rChart = null,
+        chartLoaded = false,
+        curTF = "5min",
+        curCT = "line";
+      let maVis = { ma21: true, ma50: true, ma200: true },
+        lastData = null,
+        crossX = -1;
+      let btC = [];
+
+      /* ══ TABS ══ */
+      function sw(n) {
+        const ns = ["live", "chart", "backtest"];
+        document
+          .querySelectorAll(".tab")
+          .forEach((t, i) => t.classList.toggle("act", ns[i] === n));
+        document
+          .querySelectorAll(".tc")
+          .forEach((c) => c.classList.remove("act"));
+        document.getElementById("tab-" + n).classList.add("act");
+        if (n === "chart" && !chartLoaded) loadChart();
+      }
+
+      /* ══ API ══ */
+      async function fj(u) {
+        try {
+          const r = await fetch(u);
+          return r.ok ? r.json() : null;
+        } catch {
+          return null;
+        }
+      }
+
+      /* ══ STRATEGIES ══ */
+      async function loadStrategies() {
+        const data = await fj("/api/strategies");
+        if (!data) return;
+        allStrategies = data.strategies;
+        // Select all by default
+        allStrategies.forEach((s) => selectedLiveStrategies.add(s.name));
+        renderLiveStrategies();
+        renderBTStrategyPicker();
+      }
+
+      function renderLiveStrategies() {
+        const grid = document.getElementById("live-strat-grid");
+        if (!allStrategies.length) {
+          grid.innerHTML =
+            '<div style="color:#4a5568;font-size:12px;padding:20px">No strategies found. Drop a .py file in strategies/stocks/</div>';
+          return;
+        }
+        grid.innerHTML = allStrategies
+          .map((s) => {
+            const sel = selectedLiveStrategies.has(s.name);
+            const params = s.params
+              .map(
+                (p) => `
+      <div class="sp-field">
+        <div class="sp-label">${p.label}</div>
+        <input class="sp-input" type="number" id="lp-${s.name}-${p.key}"
+          value="${p.default}" min="${p.min || ""}" max="${p.max || ""}" step="${p.step || 1}">
+      </div>`,
+              )
+              .join("");
+            return `<div class="strat-card ${sel ? "selected" : ""}" id="sc-${s.name}" onclick="toggleLiveStrategy('${s.name}')">
+      <div class="strat-hdr">
+        <span class="strat-name">${s.display_name}</span>
+        <div style="display:flex;gap:5px;align-items:center">
+          <span class="strat-badge sb-${s.asset_class}">${s.asset_class}</span>
+          <span class="strat-badge ${sel ? "sb-running" : "sb-stopped"}" id="sb-${s.name}">${sel ? "Selected" : "Off"}</span>
+        </div>
+      </div>
+      <div class="strat-desc">${s.description || "No description"}</div>
+      <div style="font-size:10px;color:#4a5568;margin-bottom:6px">File: ${s.file}</div>
+      ${params ? `<div class="strat-params" onclick="event.stopPropagation()">${params}</div>` : ""}
+    </div>`;
+          })
+          .join("");
+      }
+
+      function toggleLiveStrategy(name) {
+        if (selectedLiveStrategies.has(name)) {
+          selectedLiveStrategies.delete(name);
+        } else {
+          selectedLiveStrategies.add(name);
+        }
+        const card = document.getElementById("sc-" + name);
+        const badge = document.getElementById("sb-" + name);
+        const sel = selectedLiveStrategies.has(name);
+        card.classList.toggle("selected", sel);
+        badge.className = "strat-badge " + (sel ? "sb-running" : "sb-stopped");
+        badge.textContent = sel ? "Selected" : "Off";
+      }
+
+      function renderBTStrategyPicker() {
+        const container = document.getElementById("bt-strat-pills");
+        // Built-in compare option
+        const pills = [
+          { key: "both", label: "Compare MA + RSI", cls: "inf" },
+          { key: "ma_crossover", label: "MA Crossover", cls: "b" },
+          { key: "rsi_strategy", label: "RSI", cls: "g" },
+        ];
+        // Add discovered strategies
+        allStrategies.forEach((s) => {
+          if (s.name !== "ma_crossover" && s.name !== "rsi_strategy") {
+            pills.push({ key: s.name, label: s.display_name, cls: "pur" });
+          }
+        });
+        container.innerHTML = pills
+          .map(
+            (p) => `
+    <button class="pill ${p.key === selectedBTStrategy ? "pon" : ""}" id="bsp-${p.key}"
+      onclick="selectBTStrategy('${p.key}')">${p.label}</button>
+  `,
+          )
+          .join("");
+      }
+
+      function selectBTStrategy(key) {
+        selectedBTStrategy = key;
+        document
+          .querySelectorAll('[id^="bsp-"]')
+          .forEach((b) => b.classList.remove("pon"));
+        document.getElementById("bsp-" + key).classList.add("pon");
+        // Show dynamic params for this strategy
+        const strat = allStrategies.find((s) => s.name === key);
+        const paramsDiv = document.getElementById("bt-dyn-params");
+        if (
+          strat &&
+          strat.params &&
+          strat.params.length > 0 &&
+          key !== "both"
+        ) {
+          paramsDiv.style.display = "grid";
+          paramsDiv.innerHTML = strat.params
+            .map(
+              (p) => `
+      <div class="field">
+        <label>${p.label}</label>
+        <input type="number" id="btp-${p.key}" value="${p.default}" min="${p.min || ""}" max="${p.max || ""}" step="${p.step || 1}">
+      </div>`,
+            )
+            .join("");
+        } else if (key === "ma_crossover") {
+          paramsDiv.style.display = "grid";
+          paramsDiv.innerHTML = `
+      <div class="field"><label>Fast MA</label><input type="number" id="btp-fast_ma" value="50" min="5" max="199"></div>
+      <div class="field"><label>Slow MA</label><input type="number" id="btp-slow_ma" value="200" min="10" max="500"></div>`;
+        } else if (key === "rsi_strategy") {
+          paramsDiv.style.display = "grid";
+          paramsDiv.innerHTML = `
+      <div class="field"><label>RSI Period</label><input type="number" id="btp-rsi_period" value="14" min="5" max="30"></div>
+      <div class="field"><label>Oversold</label><input type="number" id="btp-oversold" value="30" min="10" max="45"></div>
+      <div class="field"><label>Overbought</label><input type="number" id="btp-overbought" value="70" min="55" max="90"></div>`;
+        } else {
+          paramsDiv.style.display = "none";
+        }
+      }
+
+      async function reloadStrategies() {
+        const res = await fetch("/api/strategies/reload", { method: "POST" });
+        const data = await res.json();
+        document.getElementById("bot-status-msg").textContent = data.message;
+        await loadStrategies();
+      }
+
+      /* ══ LIVE ══ */
+      async function refresh() {
+        const [st, ac, pos, tr] = await Promise.all([
+          fj("/api/status"),
+          fj("/api/account"),
+          fj("/api/positions"),
+          fj("/api/trades"),
+        ]);
+        if (st) {
+          document.getElementById("dot").className =
+            "dot " + (st.is_running ? "don" : "doff");
+          document.getElementById("stxt").textContent = st.is_running
+            ? "Running"
+            : "Stopped";
+          const mb = document.getElementById("mbdg");
+          mb.className =
+            "bdg " + (st.mode === "live" ? "bdg-live" : "bdg-paper");
+          mb.textContent = st.mode.toUpperCase();
+          document.getElementById("ka").style.display = st.kill_switch
+            ? "block"
+            : "none";
+          const p = st.daily_pnl || 0;
+          const pe = document.getElementById("dpnl");
+          pe.textContent = (p >= 0 ? "+" : "") + " $" + Math.abs(p).toFixed(2);
+          pe.className = "cv " + (p >= 0 ? "g" : "r");
+          document.getElementById("opos").textContent = st.open_positions || 0;
+          if (st.message)
+            document.getElementById("bot-status-msg").textContent = st.message;
+        }
+        if (ac) {
+          document.getElementById("eq").textContent =
+            "$" + Number(ac.equity).toLocaleString();
+          document.getElementById("cash").textContent =
+            "$" + Number(ac.cash).toLocaleString();
+        }
+        if (pos && pos.length) {
+          document.getElementById("pb").innerHTML = pos
+            .map((p) => {
+              const pl = p.unrealized_pnl || 0,
+                pct = ((p.unrealized_pct || 0) * 100).toFixed(2),
+                c = pl >= 0 ? "g" : "r";
+              return `<tr><td><strong>${p.symbol}</strong></td><td>${p.qty}</td><td>$${Number(p.avg_entry).toFixed(2)}</td><td>$${Number(p.current_price).toFixed(2)}</td><td class="${c}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</td><td class="${c}">${pl >= 0 ? "+" : ""}${pct}%</td><td style="color:#4a5568">—</td></tr>`;
+            })
+            .join("");
+        } else
+          document.getElementById("pb").innerHTML =
+            '<tr class="er"><td colspan="7">No open positions</td></tr>';
+        if (tr && tr.length)
+          document.getElementById("tb").innerHTML = tr
+            .slice(0, 20)
+            .map(
+              (t) =>
+                `<tr><td style="color:#4a5568;font-size:11px">${new Date(t.created_at).toLocaleString()}</td><td><strong>${t.symbol}</strong></td><td class="${t.side}">${t.side.toUpperCase()}</td><td>${t.qty}</td><td>$${Number(t.price).toFixed(2)}</td><td>$${Number(t.total_value).toFixed(2)}</td><td style="color:#4a5568">${t.strategy || "—"}</td></tr>`,
+            )
+            .join("");
+      }
+
+      async function ba(a) {
+        await fetch("/api/bot/" + a, { method: "POST" });
+        setTimeout(refresh, 800);
+      }
+
+      async function startSelected() {
+        const names = [...selectedLiveStrategies];
+        if (!names.length) {
+          alert("Select at least one strategy first");
+          return;
+        }
+        const res = await fetch("/api/bot/start-selected", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategies: names }),
+        });
+        const data = await res.json();
+        document.getElementById("bot-status-msg").textContent =
+          data.message || "Started";
+        setTimeout(refresh, 800);
+      }
+
+      async function ec() {
+        if (!confirm("Close ALL positions?")) return;
+        await fetch("/api/bot/emergency-close", { method: "POST" });
+        setTimeout(refresh, 1200);
+      }
+      refresh();
+      setInterval(refresh, 15000);
+
+      /* ══ CHART ══ */
+      function setTF(tf, btn) {
+        curTF = tf;
+        document
+          .querySelectorAll('[id^="tf-"]')
+          .forEach((b) => b.classList.remove("tfo"));
+        btn.classList.add("tfo");
+        loadChart();
+      }
+      function setCT(t, btn) {
+        curCT = t;
+        document
+          .querySelectorAll('[id^="ct-"]')
+          .forEach((b) => b.classList.remove("cto"));
+        btn.classList.add("cto");
+        if (lastData) drawPrice(lastData);
+      }
+      function togMA(k) {
+        maVis[k] = !maVis[k];
+        document.getElementById("tog-" + k).classList.toggle("pon", maVis[k]);
+        if (lastData) drawPrice(lastData);
+        buildLegend();
+      }
+      function ss(s) {
+        document.getElementById("csym").value = s;
+        loadChart();
+      }
+
+      async function loadChart() {
+        const sym = document.getElementById("csym").value.trim().toUpperCase();
+        const days = document.getElementById("cdays").value;
+        if (!sym) return;
+        document.getElementById("spwrap").style.display = "inline";
+        document.getElementById("clabel").textContent = sym + " - " + curTF;
+        try {
+          const d = await fj(
+            "/api/chart4/" + sym + "?days=" + days + "&timeframe=" + curTF,
+          );
+          if (!d || !d.dates || !d.dates.length) throw new Error("No data");
+          lastData = d;
+          drawPrice(d);
+          drawRSI(d);
+          const cl = d.close,
+            last = cl[cl.length - 1],
+            prev = cl[cl.length - 2] || last;
+          const chg = (((last - prev) / prev) * 100).toFixed(2);
+          const col = chg >= 0 ? "#68d391" : "#fc8181";
+          document.getElementById("pdisplay").innerHTML =
+            "$" +
+            last +
+            ' <span style="color:' +
+            col +
+            ';font-size:11px">' +
+            (chg >= 0 ? "+" : "") +
+            chg +
+            "%</span>";
+          showTrend(d);
+          buildLegend();
+          chartLoaded = true;
+        } catch (e) {
+          document.getElementById("clabel").textContent = "Error: " + e.message;
+        } finally {
+          document.getElementById("spwrap").style.display = "none";
+        }
+      }
+
+      function showTrend(d) {
+        const cl = d.close.filter((v) => v != null);
+        if (cl.length < 10) return;
+        const last = cl[cl.length - 1];
+        const ma50 = d.ma50 ? d.ma50.filter((v) => v != null) : [];
+        const ma200 = d.ma200 ? d.ma200.filter((v) => v != null) : [];
+        const lma50 = ma50[ma50.length - 1],
+          lma200 = ma200[ma200.length - 1];
+        const chg20 =
+          cl.length >= 20
+            ? (
+                ((last - cl[cl.length - 20]) / cl[cl.length - 20]) *
+                100
+              ).toFixed(1)
+            : null;
+        let trend = "tside",
+          label = "Sideways";
+        if (lma50 && lma200) {
+          if (lma50 > lma200 && last > lma50) {
+            trend = "tbull";
+            label = "Bullish";
+          } else if (lma50 < lma200 && last < lma50) {
+            trend = "tbear";
+            label = "Bearish";
+          }
+        } else if (chg20 != null) {
+          if (chg20 > 3) {
+            trend = "tbull";
+            label = "Bullish";
+          } else if (chg20 < -3) {
+            trend = "tbear";
+            label = "Bearish";
+          }
+        }
+        const rsi = d.rsi ? d.rsi.filter((v) => v != null) : [];
+        const lr = rsi[rsi.length - 1];
+        let rl = "";
+        if (lr != null) {
+          if (lr > 70) rl = " · OB";
+          else if (lr < 30) rl = " · OS";
+        }
+        document.getElementById("trbdg").innerHTML =
+          '<span class="trend-badge ' + trend + '">' + label + rl + "</span>";
+        if (lr != null)
+          document.getElementById("rsiv").textContent = "RSI " + lr.toFixed(1);
+      }
+
+      function buildLegend() {
+        const items = [
+          { k: "price", l: "Price", c: "#63b3ed", fixed: true },
+          { k: "ma21", l: "MA 21", c: "#f6e05e" },
+          { k: "ma50", l: "MA 50", c: "#68d391" },
+          { k: "ma200", l: "MA 200", c: "#fc8181" },
+        ];
+        document.getElementById("lgnd").innerHTML = items
+          .map((it) => {
+            const off = !it.fixed && maVis[it.k] === false;
+            return (
+              '<div class="li' +
+              (off ? " off" : "") +
+              '"' +
+              (it.fixed ? "" : " onclick=\"togMA('" + it.k + "')\"") +
+              '><div class="ld" style="background:' +
+              it.c +
+              '"></div><span>' +
+              it.l +
+              "</span></div>"
+            );
+          })
+          .join("");
+      }
+
+      function setupCross(canvas, data) {
+        const tip = document.getElementById("xtip");
+        function handle(mx) {
+          const pad = { l: 52, r: 10 };
+          const cw = canvas.width - pad.l - pad.r;
+          const n = data.dates.length;
+          const idx = Math.min(
+            n - 1,
+            Math.max(0, Math.round(((mx - pad.l) / cw) * (n - 1))),
+          );
+          crossX = idx;
+          if (curCT === "candle") drawCandles(data);
+          const rows = [
+            '<div class="xhdr">' + data.dates[idx] + "</div>",
+            '<div class="xrow"><span><span class="xdot" style="background:#63b3ed"></span>Price</span><span>$' +
+              (data.close[idx] || "-") +
+              "</span></div>",
+          ];
+          if (maVis.ma21 && data.ma21[idx])
+            rows.push(
+              '<div class="xrow"><span><span class="xdot" style="background:#f6e05e"></span>MA21</span><span>$' +
+                data.ma21[idx] +
+                "</span></div>",
+            );
+          if (maVis.ma50 && data.ma50[idx])
+            rows.push(
+              '<div class="xrow"><span><span class="xdot" style="background:#68d391"></span>MA50</span><span>$' +
+                data.ma50[idx] +
+                "</span></div>",
+            );
+          if (maVis.ma200 && data.ma200[idx])
+            rows.push(
+              '<div class="xrow"><span><span class="xdot" style="background:#fc8181"></span>MA200</span><span>$' +
+                data.ma200[idx] +
+                "</span></div>",
+            );
+          if (data.rsi && data.rsi[idx])
+            rows.push(
+              '<div class="xrow"><span><span class="xdot" style="background:#b794f4"></span>RSI</span><span>' +
+                data.rsi[idx] +
+                "</span></div>",
+            );
+          tip.innerHTML = rows.join("");
+          tip.style.left =
+            (mx + 140 > canvas.width ? mx - 145 : mx + 10) + "px";
+          tip.style.top = "30px";
+          tip.style.display = "block";
+        }
+        canvas.addEventListener("mousemove", (e) => {
+          const rect = canvas.getBoundingClientRect();
+          handle(e.clientX - rect.left);
+        });
+        canvas.addEventListener("mouseleave", () => {
+          tip.style.display = "none";
+          crossX = -1;
+          if (curCT === "candle" && lastData) drawCandles(lastData);
+        });
+        canvas.addEventListener(
+          "touchmove",
+          (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            handle(e.touches[0].clientX - rect.left);
+          },
+          { passive: false },
+        );
+      }
+
+      function drawPrice(d) {
+        const ex = Chart.getChart("pc");
+        if (ex) ex.destroy();
+        if (curCT === "candle") {
+          drawCandles(d);
+          return;
+        }
+        const maxT = d.dates.length > 300 ? 8 : 6;
+        const ds = [
+          {
+            label: "Price",
+            data: d.close,
+            borderColor: "#63b3ed",
+            backgroundColor: "rgba(99,179,237,0.06)",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.1,
+          },
+        ];
+        if (maVis.ma21)
+          ds.push({
+            label: "MA 21",
+            data: d.ma21,
+            borderColor: "#f6e05e",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            backgroundColor: "transparent",
+            spanGaps: true,
+          });
+        if (maVis.ma50)
+          ds.push({
+            label: "MA 50",
+            data: d.ma50,
+            borderColor: "#68d391",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            backgroundColor: "transparent",
+            spanGaps: true,
+          });
+        if (maVis.ma200)
+          ds.push({
+            label: "MA 200",
+            data: d.ma200,
+            borderColor: "#fc8181",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+            backgroundColor: "transparent",
+            spanGaps: true,
+          });
+        const ctx = document.getElementById("pc").getContext("2d");
+        pChart = new Chart(ctx, {
+          type: "line",
+          data: { labels: d.dates, datasets: ds },
+          options: {
+            responsive: true,
+            animation: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "#1a1d27",
+                borderColor: "#2d3748",
+                borderWidth: 1,
+                titleColor: "#a0aec0",
+                bodyColor: "#e2e8f0",
+                callbacks: {
+                  label: (c) =>
+                    c.parsed.y != null
+                      ? c.dataset.label + ": $" + Number(c.parsed.y).toFixed(2)
+                      : null,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: "#4a5568",
+                  maxTicksLimit: maxT,
+                  font: { size: 10 },
+                },
+                grid: { color: "#0d1220" },
+                title: {
+                  display: true,
+                  text: "Date",
+                  color: "#4a5568",
+                  font: { size: 10 },
+                },
+              },
+              y: {
+                ticks: {
+                  color: "#4a5568",
+                  font: { size: 10 },
+                  callback: (v) => "$" + Number(v).toFixed(0),
+                },
+                grid: { color: "#0d1220" },
+                title: {
+                  display: true,
+                  text: "Price (USD)",
+                  color: "#4a5568",
+                  font: { size: 10 },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function drawCandles(d) {
+        const ex = Chart.getChart("pc");
+        if (ex) ex.destroy();
+        const canvas = document.getElementById("pc");
+        const ctx = canvas.getContext("2d");
+        const W = canvas.parentElement.clientWidth - 24,
+          H = 240;
+        canvas.width = W;
+        canvas.height = H;
+        const n = d.dates.length;
+        if (!n) return;
+        const pad = { l: 52, r: 10, t: 8, b: 28 };
+        const cw = W - pad.l - pad.r,
+          ch = H - pad.t - pad.b;
+        const prices = [...d.open, ...d.high, ...d.low, ...d.close].filter(
+          (v) => v != null,
+        );
+        const minP = Math.min(...prices) * 0.998,
+          maxP = Math.max(...prices) * 1.002;
+        const toY = (v) => pad.t + ch - ((v - minP) / (maxP - minP)) * ch;
+        const bw = Math.max(2, Math.floor((cw / n) * 0.7));
+        const xOf = (i) => pad.l + i * (cw / (n - 1 || 1));
+        ctx.clearRect(0, 0, W, H);
+        ctx.font = "10px -apple-system,sans-serif";
+        for (let i = 0; i <= 4; i++) {
+          const y = pad.t + (ch / 4) * i;
+          ctx.strokeStyle = "#0d1220";
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(pad.l, y);
+          ctx.lineTo(W - pad.r, y);
+          ctx.stroke();
+          ctx.fillStyle = "#4a5568";
+          ctx.textAlign = "right";
+          ctx.fillText(
+            "$" + (maxP - ((maxP - minP) / 4) * i).toFixed(0),
+            pad.l - 3,
+            y + 3,
+          );
+        }
+        ctx.fillStyle = "#4a5568";
+        ctx.textAlign = "center";
+        const step = Math.max(1, Math.floor(n / 6));
+        for (let i = 0; i < n; i += step)
+          ctx.fillText(d.dates[i].substring(5, 10), xOf(i), H - 4);
+        for (let i = 0; i < n; i++) {
+          const o = d.open[i],
+            h = d.high[i],
+            l = d.low[i],
+            c = d.close[i];
+          if (o == null || c == null) continue;
+          const x = xOf(i),
+            up = c >= o;
+          ctx.strokeStyle = up ? "#68d391" : "#fc8181";
+          ctx.fillStyle = up ? "#68d391" : "#fc8181";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, toY(h));
+          ctx.lineTo(x, toY(l));
+          ctx.stroke();
+          const by = toY(Math.max(o, c)),
+            bh = Math.max(1, Math.abs(toY(o) - toY(c)));
+          ctx.fillRect(x - bw / 2, by, bw, bh);
+        }
+        [
+          { k: "ma21", data: d.ma21, col: "#f6e05e" },
+          { k: "ma50", data: d.ma50, col: "#68d391" },
+          { k: "ma200", data: d.ma200, col: "#fc8181" },
+        ].forEach(({ k, data, col }) => {
+          if (!maVis[k] || !data) return;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          let s = false;
+          for (let i = 0; i < n; i++) {
+            if (data[i] == null) continue;
+            const x = xOf(i),
+              y = toY(data[i]);
+            if (!s) {
+              ctx.moveTo(x, y);
+              s = true;
+            } else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        });
+        if (crossX >= 0 && crossX < n) {
+          const x = xOf(crossX);
+          ctx.strokeStyle = "rgba(255,255,255,0.15)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, pad.t);
+          ctx.lineTo(x, H - pad.b);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        setupCross(canvas, d);
+        pChart = null;
+      }
+
+      function drawRSI(d) {
+        const ex = Chart.getChart("rc");
+        if (ex) ex.destroy();
+        const maxT = d.dates.length > 300 ? 8 : 6;
+        const ctx = document.getElementById("rc").getContext("2d");
+        rChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: d.dates,
+            datasets: [
+              {
+                label: "RSI",
+                data: d.rsi,
+                borderColor: "#b794f4",
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.2,
+                backgroundColor: "rgba(183,148,244,0.05)",
+                fill: true,
+                spanGaps: true,
+              },
+              {
+                label: "OB",
+                data: Array(d.dates.length).fill(70),
+                borderColor: "rgba(252,129,129,0.3)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+              },
+              {
+                label: "OS",
+                data: Array(d.dates.length).fill(30),
+                borderColor: "rgba(104,211,145,0.3)",
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            animation: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "#1a1d27",
+                borderColor: "#2d3748",
+                borderWidth: 1,
+                bodyColor: "#e2e8f0",
+                filter: (i) => i.datasetIndex === 0,
+                callbacks: {
+                  label: (c) => "RSI: " + Number(c.parsed.y).toFixed(1),
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: "#4a5568",
+                  maxTicksLimit: maxT,
+                  font: { size: 10 },
+                },
+                grid: { color: "#0d1220" },
+                title: {
+                  display: true,
+                  text: "Date",
+                  color: "#4a5568",
+                  font: { size: 10 },
+                },
+              },
+              y: {
+                min: 0,
+                max: 100,
+                ticks: { color: "#4a5568", font: { size: 10 }, stepSize: 25 },
+                grid: { color: "#0d1220" },
+                title: {
+                  display: true,
+                  text: "RSI",
+                  color: "#4a5568",
+                  font: { size: 10 },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      /* ══ BACKTEST ══ */
+      function bss(s) {
+        document.getElementById("bsym").value = s;
+      }
+      function dBC() {
+        btC.forEach((c) => c.destroy());
+        btC = [];
+      }
+      function getTB(r) {
+        const v = r.total_return_pct;
+        if (v > 5) return '<span class="trend-badge tbull">Profitable</span>';
+        if (v < -5) return '<span class="trend-badge tbear">Losing</span>';
+        return '<span class="trend-badge tside">Neutral</span>';
+      }
+      function getSTag(s) {
+        if (s.includes("EMA") || s.includes("ema")) return "tema";
+        if (s.includes("RSI")) return "trsi";
+        return "tma";
+      }
+
+      async function runBT() {
+        const sym = document.getElementById("bsym").value.trim().toUpperCase();
+        const days = parseInt(document.getElementById("bdays").value);
+        const cash = parseFloat(document.getElementById("bcash").value);
+        if (!sym) {
+          alert("Enter a symbol");
+          return;
+        }
+
+        // Collect dynamic params
+        const params = {
+          symbol: sym,
+          days,
+          cash,
+          strategy: selectedBTStrategy,
+        };
+        document.querySelectorAll('[id^="btp-"]').forEach((inp) => {
+          const key = inp.id.replace("btp-", "");
+          params[key] = parseFloat(inp.value) || inp.value;
+        });
+        // Defaults for standard strategies
+        if (!params.fast_ma) params.fast_ma = 50;
+        if (!params.slow_ma) params.slow_ma = 200;
+        if (!params.rsi_period) params.rsi_period = 14;
+        if (!params.oversold) params.oversold = 30;
+        if (!params.overbought) params.overbought = 70;
+
+        const btn = document.getElementById("rbtn");
+        btn.disabled = true;
+        btn.textContent = "Running...";
+        dBC();
+        document.getElementById("btout").innerHTML =
+          '<div class="loading"><div class="spin" style="width:24px;height:24px;border-width:3px;margin-bottom:10px"></div><div>Running backtest on ' +
+          sym +
+          "...</div></div>";
+
+        try {
+          // Use strategy-specific endpoint for custom strategies
+          const isCustom =
+            selectedBTStrategy !== "both" &&
+            selectedBTStrategy !== "ma_crossover" &&
+            selectedBTStrategy !== "rsi_strategy";
+          const endpoint = isCustom
+            ? "/api/backtest/strategy"
+            : "/api/backtest/run";
+          const body = isCustom
+            ? { ...params, strategy: selectedBTStrategy }
+            : {
+                symbol: sym,
+                strategy: selectedBTStrategy,
+                days,
+                cash,
+                fast_ma: params.fast_ma,
+                slow_ma: params.slow_ma,
+                rsi_period: params.rsi_period,
+                oversold: params.oversold,
+                overbought: params.overbought,
+              };
+
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || "Server error");
+          renderBT(data.results, sym, cash);
+        } catch (e) {
+          document.getElementById("btout").innerHTML =
+            '<div style="margin:14px;padding:12px;background:#2d0f0f;border:1px solid #742a2a;border-radius:9px;color:#fc8181">Error: ' +
+            e.message +
+            "</div>";
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Run Backtest";
+        }
+      }
+
+      function renderBT(results, sym, startCash) {
+        if (!results || !results.length) {
+          document.getElementById("btout").innerHTML =
+            '<div style="padding:28px;text-align:center;color:#4a5568">No results</div>';
+          return;
+        }
+        const pc = (v) => (v >= 0 ? "#68d391" : "#fc8181");
+        const f$ = (v) =>
+          (v >= 0 ? "+" : "-") +
+          "$" +
+          Math.abs(v).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+        const fp = (v) => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+        let html = "";
+
+        if (results.length > 1) {
+          html = '<div class="bt-cmp">';
+          results.forEach((r, idx) => {
+            const sells = r.trades.filter((t) => t.side === "SELL");
+            const wins = sells.filter((t) => t.pnl > 0),
+              losses = sells.filter((t) => t.pnl <= 0);
+            const aw = wins.length
+              ? (wins.reduce((a, t) => a + t.pnl, 0) / wins.length).toFixed(2)
+              : "0";
+            const al = losses.length
+              ? Math.abs(
+                  losses.reduce((a, t) => a + t.pnl, 0) / losses.length,
+                ).toFixed(2)
+              : "0";
+            html += `<div class="bt-side">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:5px">
+          <span class="stag ${getSTag(r.strategy)}">${r.strategy}</span>${getTB(r)}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px">
+          <div class="rcard"><div class="rl">Return</div><div class="rv" style="color:${pc(r.total_return_pct)}">${fp(r.total_return_pct)}</div></div>
+          <div class="rcard"><div class="rl">Net P&L</div><div class="rv" style="color:${pc(r.total_pnl)}">${f$(r.total_pnl)}</div></div>
+          <div class="rcard"><div class="rl">Win rate</div><div class="rv" style="color:#63b3ed">${r.win_rate_pct.toFixed(1)}%</div></div>
+          <div class="rcard"><div class="rl">Trades</div><div class="rv" style="color:#a0aec0">${r.total_trades}</div></div>
+          <div class="rcard"><div class="rl">Avg win</div><div class="rv" style="color:#68d391">+$${aw}</div></div>
+          <div class="rcard"><div class="rl">Avg loss</div><div class="rv" style="color:#fc8181">-$${al}</div></div>
+        </div>
+        <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Equity curve</div>
+        <canvas id="eq${idx}" height="120" style="margin-bottom:8px"></canvas>
+        <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Trades</div>
+        <div class="tw" style="max-height:150px;overflow-y:auto"><table>
+          <thead><tr><th>Date</th><th>Side</th><th>Price</th><th>P&L</th></tr></thead>
+          <tbody>${
+            r.trades.length
+              ? r.trades
+                  .map(
+                    (t) => `<tr>
+            <td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td>
+            <td class="${t.side.toLowerCase()}">${t.side}</td>
+            <td>$${Number(t.price).toFixed(2)}</td>
+            <td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"};font-size:11px">${t.pnl != null ? f$(t.pnl) : "—"}</td>
+          </tr>`,
+                  )
+                  .join("")
+              : '<tr class="er"><td colspan="4">No trades</td></tr>'
+          }
+          </tbody>
+        </table></div>
+      </div>`;
+          });
+          html += "</div>";
+        } else {
+          const r = results[0];
+          html = `<div class="bt-full"><div style="background:#111522;border:1px solid #1e2740;border-radius:10px;padding:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span class="stag ${getSTag(r.strategy)}">${r.strategy}</span>${getTB(r)}
+        <span style="color:#4a5568;font-size:12px">${sym} · ${r.total_trades} trades</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="rcard"><div class="rl">Return</div><div class="rv" style="color:${pc(r.total_return_pct)}">${fp(r.total_return_pct)}</div></div>
+        <div class="rcard"><div class="rl">Net P&L</div><div class="rv" style="color:${pc(r.total_pnl)}">${f$(r.total_pnl)}</div></div>
+        <div class="rcard"><div class="rl">Win rate</div><div class="rv" style="color:#63b3ed">${r.win_rate_pct.toFixed(1)}%</div></div>
+        <div class="rcard"><div class="rl">Final equity</div><div class="rv">$${r.final_equity.toLocaleString()}</div></div>
+        <div class="rcard"><div class="rl">Wins</div><div class="rv" style="color:#68d391">${r.winning_trades}</div></div>
+        <div class="rcard"><div class="rl">Losses</div><div class="rv" style="color:#fc8181">${r.losing_trades}</div></div>
+      </div>
+      <div style="margin-top:10px;font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Equity curve</div>
+      <canvas id="eq0" height="150"></canvas>
+      <div style="margin-top:10px;font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Trade log</div>
+      <div class="tw" style="max-height:200px;overflow-y:auto"><table>
+        <thead><tr><th>Date</th><th>Side</th><th>Qty</th><th>Price</th><th>Reason</th><th>P&L</th></tr></thead>
+        <tbody>${
+          r.trades.length
+            ? r.trades
+                .map(
+                  (t) => `<tr>
+          <td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td>
+          <td class="${t.side.toLowerCase()}">${t.side}</td>
+          <td>${t.qty || "—"}</td><td>$${Number(t.price).toFixed(2)}</td>
+          <td style="color:#718096;font-size:10px">${t.reason || ""}</td>
+          <td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"}">${t.pnl != null ? f$(t.pnl) : "—"}</td>
+        </tr>`,
+                )
+                .join("")
+            : '<tr class="er"><td colspan="6">No trades</td></tr>'
+        }
+        </tbody>
+      </table></div>
+    </div></div>`;
+        }
+
+        document.getElementById("btout").innerHTML = html;
+
+        const cols = ["#7c3aed", "#10b981", "#f6ad55"];
+        results.forEach((r, idx) => {
+          const cv = document.getElementById("eq" + idx);
+          if (!cv || !r.equity_curve || !r.equity_curve.length) return;
+          const ch = new Chart(cv.getContext("2d"), {
+            type: "line",
+            data: {
+              datasets: [
+                {
+                  label: r.strategy,
+                  data: r.equity_curve.map((p) => ({ x: p.date, y: p.equity })),
+                  borderColor: cols[idx] || "#7c3aed",
+                  backgroundColor: "transparent",
+                  borderWidth: 2,
+                  pointRadius: 0,
+                  tension: 0.3,
+                },
+                {
+                  label: "Start",
+                  data: r.equity_curve.map((p) => ({
+                    x: p.date,
+                    y: startCash,
+                  })),
+                  borderColor: "#2d3748",
+                  backgroundColor: "transparent",
+                  borderWidth: 1,
+                  borderDash: [3, 3],
+                  pointRadius: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: {
+                  labels: { color: "#718096", font: { size: 9 }, boxWidth: 10 },
+                },
+                tooltip: {
+                  backgroundColor: "#1a1d27",
+                  borderColor: "#2d3748",
+                  borderWidth: 1,
+                  bodyColor: "#e2e8f0",
+                  callbacks: {
+                    label: (c) =>
+                      c.dataset.label +
+                      ": $" +
+                      Number(c.parsed.y).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }),
+                  },
+                },
+              },
+              scales: {
+                x: {
+                  type: "category",
+                  ticks: {
+                    color: "#4a5568",
+                    maxTicksLimit: 5,
+                    font: { size: 9 },
+                  },
+                  grid: { color: "#111827" },
+                  title: {
+                    display: true,
+                    text: "Date",
+                    color: "#4a5568",
+                    font: { size: 9 },
+                  },
+                },
+                y: {
+                  ticks: {
+                    color: "#4a5568",
+                    font: { size: 9 },
+                    callback: (v) => "$" + Number(v).toLocaleString(),
+                  },
+                  grid: { color: "#111827" },
+                  title: {
+                    display: true,
+                    text: "Equity",
+                    color: "#4a5568",
+                    font: { size: 9 },
+                  },
+                },
+              },
+            },
+          });
+          btC.push(ch);
+        });
+      }
+
+      /* ══ INIT ══ */
+      loadStrategies();
+    </script>
+  </body>
+</html>
