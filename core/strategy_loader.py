@@ -61,6 +61,38 @@ STRATEGY_PARAMS = {
             },
         ],
     },
+    "supertrend": {
+        "display_name": "Supertrend",
+        "description": "ATR-based trend flip strategy (~62-68% win rate in trending markets)",
+        "params": [
+            {
+                "key": "atr_period",
+                "label": "ATR Period",
+                "type": "number",
+                "default": 10,
+                "min": 5,
+                "max": 30,
+            },
+            {
+                "key": "multiplier",
+                "label": "Multiplier",
+                "type": "number",
+                "default": 3.0,
+                "min": 1.0,
+                "max": 5.0,
+                "step": 0.5,
+            },
+            {
+                "key": "risk_per_trade",
+                "label": "Risk %/trade",
+                "type": "number",
+                "default": 0.015,
+                "min": 0.005,
+                "max": 0.05,
+                "step": 0.005,
+            },
+        ],
+    },
     "macd_strategy": {
         "display_name": "MACD Crossover",
         "description": "Buy/sell on MACD line crossing the signal line",
