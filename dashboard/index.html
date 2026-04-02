@@ -6,7 +6,10 @@
     <meta name="cache-control" content="no-cache" />
     <title>Trading Bot v4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
+      /* ── EXACT WORKING CSS (unchanged) ── */
       * {
         box-sizing: border-box;
         margin: 0;
@@ -18,7 +21,6 @@
         color: #e2e8f0;
         min-height: 100vh;
       }
-      /* Header */
       .header {
         background: #111522;
         border-bottom: 1px solid #1e2740;
@@ -70,7 +72,6 @@
       .dot-off {
         background: #4a5568;
       }
-      /* Debug bar */
       .dbgbar {
         background: #060810;
         padding: 4px 16px;
@@ -80,7 +81,6 @@
         border-bottom: 1px solid #0d1220;
         letter-spacing: 0.02em;
       }
-      /* Tabs - EXACT from working version */
       .tabs {
         display: flex;
         gap: 2px;
@@ -110,7 +110,6 @@
       .tab-content.active {
         display: block;
       }
-      /* Cards */
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -141,7 +140,6 @@
       .red {
         color: #fc8181;
       }
-      /* Buttons */
       .btn {
         padding: 8px 14px;
         border-radius: 8px;
@@ -201,14 +199,12 @@
         font-size: 13px;
         font-weight: 600;
       }
-      /* Controls */
       .controls {
         display: flex;
         flex-wrap: wrap;
         gap: 7px;
         padding: 0 16px 12px;
       }
-      /* Tables */
       .section {
         padding: 0 16px 20px;
       }
@@ -261,7 +257,6 @@
         color: #2d3748;
         padding: 24px;
       }
-      /* Strategy cards */
       .strat-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -348,7 +343,6 @@
         font-weight: 600;
         outline: none;
       }
-      /* Chart */
       .cpanel {
         padding: 12px 16px;
       }
@@ -516,7 +510,6 @@
           transform: rotate(360deg);
         }
       }
-      /* Backtest */
       .bt-form {
         background: #111522;
         border: 1px solid #1e2740;
@@ -630,6 +623,92 @@
         padding-top: 10px;
         border-top: 1px solid #1e2740;
       }
+
+      /* ── NEW CSS for added features ── */
+      /* Multi-study panel */
+      .study-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .study-box {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .study-ctrl {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+        align-items: center;
+      }
+      /* Volume/MACD panels */
+      .panel-toggle {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-bottom: 8px;
+      }
+      /* BT markers legend */
+      .mk-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      .mk {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #a0aec0;
+      }
+      .mkd {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      /* Watchlist cards on live tab */
+      .wl-mini-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .wlc {
+        background: #111522;
+        border: 1px solid #1e2740;
+        border-radius: 10px;
+        padding: 10px;
+        cursor: pointer;
+      }
+      .wlc.wup {
+        border-color: #276749;
+      }
+      .wlc.wdn {
+        border-color: #742a2a;
+      }
+      .wl-sym {
+        font-size: 13px;
+        font-weight: 800;
+        color: #fff;
+      }
+      .wl-price {
+        font-size: 18px;
+        font-weight: 800;
+        margin: 3px 0 1px;
+      }
+      .zoom-hint {
+        font-size: 9px;
+        color: #2d3748;
+        text-align: right;
+        margin-top: 3px;
+      }
+
       @media (max-width: 600px) {
         .grid {
           grid-template-columns: repeat(2, 1fr);
@@ -645,6 +724,12 @@
         }
         .sp-grid {
           grid-template-columns: 1fr;
+        }
+        .study-grid {
+          grid-template-columns: 1fr;
+        }
+        .wl-mini-grid {
+          grid-template-columns: repeat(2, 1fr);
         }
       }
     </style>
@@ -662,14 +747,14 @@
     </div>
     <div class="dbgbar" id="dbgbar">Initializing...</div>
 
-    <!-- TABS: using proven switchTab + tab-content + active -->
+    <!-- TABS: exact working pattern -->
     <div class="tabs">
       <div class="tab active" onclick="switchTab('live')">Live</div>
       <div class="tab" onclick="switchTab('chart')">Chart</div>
       <div class="tab" onclick="switchTab('backtest')">Backtest</div>
     </div>
 
-    <!-- ═══════════ LIVE ═══════════ -->
+    <!-- ══════════════════════════════════ LIVE ══════════════════════════════════ -->
     <div class="tab-content active" id="tab-live">
       <div
         id="kill-alert"
@@ -718,7 +803,7 @@
           onclick="reloadStrategies()"
           style="margin-left: auto"
         >
-          ⟳ Reload Strategies
+          ⟳ Reload
         </button>
       </div>
       <div
@@ -734,12 +819,69 @@
       <!-- Strategy Cards -->
       <div style="padding: 0 16px 14px">
         <div class="section-title" style="margin-bottom: 10px">
-          Select strategies to run — click card to toggle ON/OFF, edit params
-          inline
+          Select strategies — click to toggle, edit params inline
         </div>
         <div class="strat-grid" id="sgrid">
           <div style="color: #4a5568; font-size: 12px; padding: 16px">
-            Loading strategies...
+            Loading...
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW: Live positions mini-charts -->
+      <div style="padding: 0 16px 14px">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 6px;
+          "
+        >
+          <div class="section-title" style="margin-bottom: 0">
+            📡 Watchlist Charts
+          </div>
+          <div
+            style="
+              display: flex;
+              gap: 6px;
+              align-items: center;
+              flex-wrap: wrap;
+            "
+          >
+            <input
+              id="wl-syms"
+              value="AAPL,MSFT,NVDA,TSLA,SPY,AMD"
+              style="
+                padding: 4px 8px;
+                background: #0b0e17;
+                border: 1px solid #1e2740;
+                border-radius: 6px;
+                color: #e2e8f0;
+                font-size: 11px;
+                outline: none;
+                width: 200px;
+                text-transform: uppercase;
+              "
+            />
+            <button
+              class="btn btn-info"
+              onclick="loadWatchlist()"
+              style="padding: 4px 10px; font-size: 11px"
+            >
+              Load
+            </button>
+            <span
+              id="wl-updated"
+              style="font-size: 10px; color: #2d3748"
+            ></span>
+          </div>
+        </div>
+        <div class="wl-mini-grid" id="wl-grid">
+          <div style="color: #4a5568; font-size: 12px; padding: 12px">
+            Loading...
           </div>
         </div>
       </div>
@@ -792,7 +934,7 @@
       </div>
     </div>
 
-    <!-- ═══════════ CHART ═══════════ -->
+    <!-- ══════════════════════════════════ CHART ══════════════════════════════════ -->
     <div class="tab-content" id="tab-chart">
       <div class="cpanel">
         <div class="crow">
@@ -822,6 +964,26 @@
             ><div class="spinner"></div
           ></span>
           <span id="trend-wrap" style="margin-left: 6px"></span>
+          <div
+            style="
+              margin-left: auto;
+              display: flex;
+              gap: 6px;
+              align-items: center;
+            "
+          >
+            <button
+              class="pill"
+              id="rt-btn"
+              onclick="toggleRT()"
+              style="font-size: 11px"
+            >
+              ⟳ Live: OFF
+            </button>
+            <button class="pill" onclick="resetZoom()" style="font-size: 11px">
+              Reset Zoom
+            </button>
+          </div>
         </div>
         <div class="crow">
           <span
@@ -901,6 +1063,18 @@
             200
           </button>
           <span style="font-size: 10px; color: #4a5568; margin-left: 4px"
+            >Panels:</span
+          >
+          <button class="pill pon" id="tog-vol" onclick="togPanel('vol')">
+            Volume
+          </button>
+          <button class="pill" id="tog-rsi" onclick="togPanel('rsi')">
+            RSI
+          </button>
+          <button class="pill" id="tog-macd" onclick="togPanel('macd')">
+            MACD
+          </button>
+          <span style="font-size: 10px; color: #4a5568; margin-left: 4px"
             >Quick:</span
           >
           <button class="pill" onclick="setSym('AAPL')">AAPL</button>
@@ -912,35 +1086,272 @@
           <button class="pill" onclick="setSym('META')">META</button>
         </div>
         <div class="lgnd" id="chart-lgnd"></div>
+
+        <!-- Main price chart -->
         <div class="cbox">
           <div class="ctitle">
             <span id="chart-label">Price</span>
-            <span
-              id="rsi-display"
-              style="color: #b794f4; font-weight: 700; font-size: 11px"
-            ></span>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <span
+                id="rsi-display"
+                style="color: #b794f4; font-weight: 700; font-size: 11px"
+              ></span>
+              <span id="trend-wrap2"></span>
+            </div>
           </div>
-          <div id="xtip" class="xtip"></div>
           <canvas
             id="price-canvas"
             height="260"
             style="cursor: crosshair; display: block; width: 100%"
           ></canvas>
+          <div class="zoom-hint">
+            🔍 Scroll = zoom &nbsp;·&nbsp; Drag = pan &nbsp;·&nbsp; Double-click
+            = reset
+          </div>
         </div>
-        <div class="cbox">
+
+        <!-- Volume panel (new, toggleable) -->
+        <div class="cbox" id="vol-panel">
+          <div class="ctitle"><span>Volume</span></div>
+          <canvas id="vol-canvas" height="70"></canvas>
+        </div>
+
+        <!-- RSI panel (original, now toggleable) -->
+        <div class="cbox" id="rsi-panel" style="display: none">
           <div class="ctitle">
             <span>RSI (14)</span>
             <span style="font-size: 11px"
-              ><span style="color: #fc8181">OB&gt;70</span> &nbsp;
-              <span style="color: #68d391">OS&lt;30</span></span
+              ><span style="color: #fc8181">OB&gt;70</span> &nbsp;<span
+                style="color: #68d391"
+                >OS&lt;30</span
+              ></span
             >
           </div>
           <canvas id="rsi-canvas" height="110"></canvas>
         </div>
+
+        <!-- MACD panel (new, toggleable) -->
+        <div class="cbox" id="macd-panel" style="display: none">
+          <div class="ctitle">
+            <span>MACD (12,26,9)</span
+            ><span
+              id="macd-vals"
+              style="font-size: 10px; color: #a0aec0"
+            ></span>
+          </div>
+          <canvas id="macd-canvas" height="90"></canvas>
+        </div>
+
+        <!-- NEW: 2×2 Multi-Study Panel -->
+        <div class="cbox" style="margin-bottom: 0">
+          <div class="ctitle">
+            <span
+              >📐 Multi-Study Panel — 4 charts, pick symbol + timeframe +
+              indicator</span
+            >
+            <button
+              class="pill"
+              onclick="loadStudies()"
+              style="font-size: 11px; padding: 4px 9px"
+            >
+              ▶ Load All
+            </button>
+          </div>
+          <div class="study-grid" id="study-grid">
+            <div class="study-box">
+              <div class="study-ctrl">
+                <input
+                  id="s0-sym"
+                  class="sym-in"
+                  value="NVDA"
+                  oninput="this.value=this.value.toUpperCase()"
+                  style="width: 62px; font-size: 12px; padding: 5px 7px"
+                />
+                <select
+                  id="s0-tf"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="1D" selected>1D</option>
+                  <option value="1hr">1H</option>
+                  <option value="15min">15m</option>
+                  <option value="5min">5m</option>
+                  <option value="1W">1W</option>
+                </select>
+                <select
+                  id="s0-ind"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="price">Price+MA</option>
+                  <option value="rsi">RSI</option>
+                  <option value="macd">MACD</option>
+                  <option value="vol">Volume</option>
+                </select>
+              </div>
+              <canvas id="sc0" height="140"></canvas>
+            </div>
+            <div class="study-box">
+              <div class="study-ctrl">
+                <input
+                  id="s1-sym"
+                  class="sym-in"
+                  value="AAPL"
+                  oninput="this.value=this.value.toUpperCase()"
+                  style="width: 62px; font-size: 12px; padding: 5px 7px"
+                />
+                <select
+                  id="s1-tf"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="1hr" selected>1H</option>
+                  <option value="1D">1D</option>
+                  <option value="15min">15m</option>
+                  <option value="5min">5m</option>
+                  <option value="1W">1W</option>
+                </select>
+                <select
+                  id="s1-ind"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="rsi" selected>RSI</option>
+                  <option value="price">Price+MA</option>
+                  <option value="macd">MACD</option>
+                  <option value="vol">Volume</option>
+                </select>
+              </div>
+              <canvas id="sc1" height="140"></canvas>
+            </div>
+            <div class="study-box">
+              <div class="study-ctrl">
+                <input
+                  id="s2-sym"
+                  class="sym-in"
+                  value="SPY"
+                  oninput="this.value=this.value.toUpperCase()"
+                  style="width: 62px; font-size: 12px; padding: 5px 7px"
+                />
+                <select
+                  id="s2-tf"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="1D" selected>1D</option>
+                  <option value="1hr">1H</option>
+                  <option value="15min">15m</option>
+                  <option value="5min">5m</option>
+                  <option value="1W">1W</option>
+                </select>
+                <select
+                  id="s2-ind"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="macd" selected>MACD</option>
+                  <option value="price">Price+MA</option>
+                  <option value="rsi">RSI</option>
+                  <option value="vol">Volume</option>
+                </select>
+              </div>
+              <canvas id="sc2" height="140"></canvas>
+            </div>
+            <div class="study-box">
+              <div class="study-ctrl">
+                <input
+                  id="s3-sym"
+                  class="sym-in"
+                  value="TSLA"
+                  oninput="this.value=this.value.toUpperCase()"
+                  style="width: 62px; font-size: 12px; padding: 5px 7px"
+                />
+                <select
+                  id="s3-tf"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="15min" selected>15m</option>
+                  <option value="1D">1D</option>
+                  <option value="1hr">1H</option>
+                  <option value="5min">5m</option>
+                  <option value="1W">1W</option>
+                </select>
+                <select
+                  id="s3-ind"
+                  style="
+                    padding: 5px;
+                    background: #0b0e17;
+                    border: 1px solid #1e2740;
+                    border-radius: 6px;
+                    color: #e2e8f0;
+                    font-size: 11px;
+                    outline: none;
+                  "
+                >
+                  <option value="vol" selected>Volume</option>
+                  <option value="price">Price+MA</option>
+                  <option value="rsi">RSI</option>
+                  <option value="macd">MACD</option>
+                </select>
+              </div>
+              <canvas id="sc3" height="140"></canvas>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- ═══════════ BACKTEST ═══════════ -->
+    <!-- ══════════════════════════════════ BACKTEST ══════════════════════════════════ -->
     <div class="tab-content" id="tab-backtest">
       <div class="bt-form">
         <div class="fgrid">
@@ -1036,20 +1447,261 @@
           Run Backtest
         </button>
       </div>
+
+      <!-- NEW: Multi-strategy BT panel -->
+      <div
+        style="
+          margin: 0 16px 16px;
+          background: #111522;
+          border: 1px solid #1e2740;
+          border-radius: 10px;
+          padding: 14px;
+        "
+      >
+        <div
+          style="
+            font-size: 10px;
+            font-weight: 700;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 10px;
+          "
+        >
+          📐 Multi-Strategy Panel — same stock, 4 panels with different
+          strategies / timeframes
+        </div>
+        <div class="study-grid" id="bt-study-grid">
+          <div class="study-box">
+            <div class="study-ctrl">
+              <input
+                id="bs0-sym"
+                class="sym-in"
+                value="AAPL"
+                oninput="this.value=this.value.toUpperCase()"
+                style="width: 62px; font-size: 12px; padding: 5px 7px"
+              />
+              <select
+                id="bs0-strat"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="ma_crossover">MA Crossover</option>
+                <option value="rsi_strategy">RSI</option>
+              </select>
+              <select
+                id="bs0-days"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="180">6m</option>
+                <option value="365" selected>1y</option>
+                <option value="730">2y</option>
+              </select>
+            </div>
+            <canvas id="bsc0" height="130"></canvas>
+            <div
+              id="bsi0"
+              style="
+                font-size: 10px;
+                color: #4a5568;
+                margin-top: 4px;
+                text-align: center;
+              "
+            ></div>
+          </div>
+          <div class="study-box">
+            <div class="study-ctrl">
+              <input
+                id="bs1-sym"
+                class="sym-in"
+                value="NVDA"
+                oninput="this.value=this.value.toUpperCase()"
+                style="width: 62px; font-size: 12px; padding: 5px 7px"
+              />
+              <select
+                id="bs1-strat"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="rsi_strategy" selected>RSI</option>
+                <option value="ma_crossover">MA Crossover</option>
+              </select>
+              <select
+                id="bs1-days"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="180">6m</option>
+                <option value="365" selected>1y</option>
+                <option value="730">2y</option>
+              </select>
+            </div>
+            <canvas id="bsc1" height="130"></canvas>
+            <div
+              id="bsi1"
+              style="
+                font-size: 10px;
+                color: #4a5568;
+                margin-top: 4px;
+                text-align: center;
+              "
+            ></div>
+          </div>
+          <div class="study-box">
+            <div class="study-ctrl">
+              <input
+                id="bs2-sym"
+                class="sym-in"
+                value="SPY"
+                oninput="this.value=this.value.toUpperCase()"
+                style="width: 62px; font-size: 12px; padding: 5px 7px"
+              />
+              <select
+                id="bs2-strat"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="ma_crossover">MA Crossover</option>
+                <option value="rsi_strategy">RSI</option>
+              </select>
+              <select
+                id="bs2-days"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="365" selected>1y</option>
+                <option value="730">2y</option>
+                <option value="180">6m</option>
+              </select>
+            </div>
+            <canvas id="bsc2" height="130"></canvas>
+            <div
+              id="bsi2"
+              style="
+                font-size: 10px;
+                color: #4a5568;
+                margin-top: 4px;
+                text-align: center;
+              "
+            ></div>
+          </div>
+          <div class="study-box">
+            <div class="study-ctrl">
+              <input
+                id="bs3-sym"
+                class="sym-in"
+                value="TSLA"
+                oninput="this.value=this.value.toUpperCase()"
+                style="width: 62px; font-size: 12px; padding: 5px 7px"
+              />
+              <select
+                id="bs3-strat"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="rsi_strategy">RSI</option>
+                <option value="ma_crossover">MA Crossover</option>
+              </select>
+              <select
+                id="bs3-days"
+                style="
+                  padding: 5px;
+                  background: #0b0e17;
+                  border: 1px solid #1e2740;
+                  border-radius: 6px;
+                  color: #e2e8f0;
+                  font-size: 11px;
+                  outline: none;
+                "
+              >
+                <option value="730">2y</option>
+                <option value="365" selected>1y</option>
+                <option value="180">6m</option>
+              </select>
+            </div>
+            <canvas id="bsc3" height="130"></canvas>
+            <div
+              id="bsi3"
+              style="
+                font-size: 10px;
+                color: #4a5568;
+                margin-top: 4px;
+                text-align: center;
+              "
+            ></div>
+          </div>
+        </div>
+        <button
+          class="btn btn-info"
+          onclick="runBTStudies()"
+          style="margin-top: 10px; font-size: 12px"
+        >
+          ▶ Run All 4 Backtests
+        </button>
+      </div>
+
       <div id="bt-output"></div>
     </div>
 
     <script>
       "use strict";
 
-      /* ═══════════════════════════════════════════
-   TABS — proven pattern: switchTab + tab-content + active
-═══════════════════════════════════════════ */
+      /* ══ TABS — exact working pattern ══ */
       function switchTab(n) {
         const names = ["live", "chart", "backtest"];
-        document.querySelectorAll(".tab").forEach((t, i) => {
-          t.classList.toggle("active", names[i] === n);
-        });
+        document
+          .querySelectorAll(".tab")
+          .forEach((t, i) => t.classList.toggle("active", names[i] === n));
         document
           .querySelectorAll(".tab-content")
           .forEach((c) => c.classList.remove("active"));
@@ -1057,21 +1709,17 @@
         if (n === "chart" && !chartLoaded) loadChart();
       }
 
-      /* ═══════════════════════════════════════════
-   API HELPER
-═══════════════════════════════════════════ */
+      /* ══ API helper ══ */
       async function fetchJ(url) {
         try {
           const r = await fetch(url);
           return r.ok ? r.json() : null;
-        } catch (e) {
+        } catch {
           return null;
         }
       }
 
-      /* ═══════════════════════════════════════════
-   LIVE DASHBOARD
-═══════════════════════════════════════════ */
+      /* ══ LIVE — exact working code ══ */
       async function refresh() {
         const [st, ac, pos, tr] = await Promise.all([
           fetchJ("/api/status"),
@@ -1079,35 +1727,27 @@
           fetchJ("/api/positions"),
           fetchJ("/api/trades"),
         ]);
-
         if (st) {
-          // Status dot + text
           document.getElementById("dot").className =
             "dot " + (st.is_running ? "dot-on" : "dot-off");
           document.getElementById("status-text").textContent = st.is_running
             ? "Running"
             : "Stopped";
-          // Mode badge
           const mb = document.getElementById("mode-badge");
           mb.className =
             "badge " + (st.mode === "live" ? "badge-live" : "badge-paper");
           mb.textContent = (st.mode || "paper").toUpperCase();
-          // Kill switch alert
           document.getElementById("kill-alert").style.display = st.kill_switch
             ? "block"
             : "none";
-          // P&L
           const p = Number(st.daily_pnl) || 0;
           const pe = document.getElementById("daily-pnl");
           pe.textContent = (p >= 0 ? "+" : "") + " $" + Math.abs(p).toFixed(2);
           pe.className = "card-val " + (p >= 0 ? "green" : "red");
-          // Positions count
           document.getElementById("open-pos").textContent =
             st.open_positions || 0;
-          // Bot message
           if (st.message)
             document.getElementById("bot-msg").textContent = st.message;
-          // Debug bar
           document.getElementById("dbgbar").textContent =
             "✓ API OK  |  equity=$" +
             Number(st.equity || 0).toLocaleString() +
@@ -1122,70 +1762,46 @@
           document.getElementById("status-text").textContent = "Offline";
           document.getElementById("dot").className = "dot dot-off";
           document.getElementById("dbgbar").textContent =
-            '✗ SERVER UNREACHABLE — In Replit shell run: pkill -f "python main.py"; python main.py';
+            "✗ SERVER UNREACHABLE — run: python main.py in Replit shell";
         }
-
-        // Account
         if (ac) {
           document.getElementById("equity").textContent =
             "$" + Number(ac.equity).toLocaleString();
           document.getElementById("cash").textContent =
             "$" + Number(ac.cash).toLocaleString();
         }
-
-        // Positions
         if (pos && pos.length) {
           document.getElementById("pos-body").innerHTML = pos
             .map((p) => {
-              const pl = Number(p.unrealized_pnl) || 0;
-              const pct = (Number(p.unrealized_pct) * 100).toFixed(2);
-              const c = pl >= 0 ? "green" : "red";
-              return `<tr>
-        <td><strong>${p.symbol}</strong></td>
-        <td>${p.qty}</td>
-        <td>$${Number(p.avg_entry).toFixed(2)}</td>
-        <td>$${Number(p.current_price).toFixed(2)}</td>
-        <td class="${c}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</td>
-        <td class="${c}">${pl >= 0 ? "+" : ""}${pct}%</td>
-        <td style="color:#4a5568">—</td>
-      </tr>`;
+              const pl = Number(p.unrealized_pnl) || 0,
+                pct = (Number(p.unrealized_pct) * 100).toFixed(2),
+                c = pl >= 0 ? "green" : "red";
+              return `<tr><td><strong>${p.symbol}</strong></td><td>${p.qty}</td><td>$${Number(p.avg_entry).toFixed(2)}</td><td>$${Number(p.current_price).toFixed(2)}</td><td class="${c}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</td><td class="${c}">${pl >= 0 ? "+" : ""}${pct}%</td><td style="color:#4a5568">—</td></tr>`;
             })
             .join("");
         } else {
           document.getElementById("pos-body").innerHTML =
             '<tr class="empty-row"><td colspan="7">No open positions</td></tr>';
         }
-
-        // Trades
         if (tr && tr.length) {
           document.getElementById("trades-body").innerHTML = tr
             .slice(0, 20)
             .map(
-              (t) => `<tr>
-      <td style="color:#4a5568;font-size:11px">${new Date(t.created_at).toLocaleString()}</td>
-      <td><strong>${t.symbol}</strong></td>
-      <td class="${t.side}">${t.side.toUpperCase()}</td>
-      <td>${t.qty}</td>
-      <td>$${Number(t.price).toFixed(2)}</td>
-      <td>$${Number(t.total_value).toFixed(2)}</td>
-      <td style="color:#4a5568">${t.strategy || "—"}</td>
-    </tr>`,
+              (t) =>
+                `<tr><td style="color:#4a5568;font-size:11px">${new Date(t.created_at).toLocaleString()}</td><td><strong>${t.symbol}</strong></td><td class="${t.side}">${t.side.toUpperCase()}</td><td>${t.qty}</td><td>$${Number(t.price).toFixed(2)}</td><td>$${Number(t.total_value).toFixed(2)}</td><td style="color:#4a5568">${t.strategy || "—"}</td></tr>`,
             )
             .join("");
         }
       }
-
       async function botAction(a) {
         await fetch("/api/bot/" + a, { method: "POST" });
         setTimeout(refresh, 800);
       }
-
       async function emergencyClose() {
         if (!confirm("EMERGENCY: Close ALL positions now?")) return;
         await fetch("/api/bot/emergency-close", { method: "POST" });
         setTimeout(refresh, 1200);
       }
-
       async function startSelected() {
         const names = [...selectedLive];
         if (!names.length) {
@@ -1201,27 +1817,22 @@
         document.getElementById("bot-msg").textContent = d.message || "Started";
         setTimeout(refresh, 800);
       }
-
-      // Auto-refresh every 10 seconds
       refresh();
       setInterval(refresh, 10000);
 
-      /* ═══════════════════════════════════════════
-   STRATEGIES
-═══════════════════════════════════════════ */
-      let allStrategies = [];
-      let selectedLive = new Set();
-      let selectedBT = "both";
+      /* ══ STRATEGIES — exact working code ══ */
+      let allStrategies = [],
+        selectedLive = new Set(),
+        selectedBT = "both";
 
       async function loadStrategies() {
         const d = await fetchJ("/api/strategies");
         if (!d || !d.strategies) {
           document.getElementById("sgrid").innerHTML =
-            '<div style="color:#fc8181;font-size:12px;padding:16px">Failed to load strategies — visit /api/debug for diagnostics</div>';
+            '<div style="color:#fc8181;font-size:12px;padding:16px">Failed to load strategies — visit /api/debug</div>';
           return;
         }
         allStrategies = d.strategies;
-        // Select all by default
         allStrategies.forEach((s) => selectedLive.add(s.name));
         renderStrategyCards();
         addCustomBTPills();
@@ -1239,16 +1850,8 @@
             const on = selectedLive.has(s.name);
             const params = (s.params || [])
               .map(
-                (p) => `
-      <div class="sp-field">
-        <div class="sp-lbl">${p.label}</div>
-        <input class="sp-inp" type="number"
-          id="lp-${s.name}-${p.key}"
-          value="${p.default}"
-          min="${p.min !== undefined ? p.min : ""}"
-          max="${p.max !== undefined ? p.max : ""}"
-          step="${p.step || 1}">
-      </div>`,
+                (p) =>
+                  `<div class="sp-field"><div class="sp-lbl">${p.label}</div><input class="sp-inp" type="number" id="lp-${s.name}-${p.key}" value="${p.default}" min="${p.min !== undefined ? p.min : ""}" max="${p.max !== undefined ? p.max : ""}" step="${p.step || 1}"></div>`,
               )
               .join("");
             return `<div class="sc ${on ? "son" : ""}" id="sc-${s.name}" onclick="toggleLiveStrategy('${s.name}')">
@@ -1268,8 +1871,9 @@
       }
 
       function toggleLiveStrategy(name) {
-        if (selectedLive.has(name)) selectedLive.delete(name);
-        else selectedLive.add(name);
+        selectedLive.has(name)
+          ? selectedLive.delete(name)
+          : selectedLive.add(name);
         const on = selectedLive.has(name);
         document.getElementById("sc-" + name).classList.toggle("son", on);
         const b = document.getElementById("sb-" + name);
@@ -1288,7 +1892,6 @@
       function addCustomBTPills() {
         const container = document.getElementById("bt-pills");
         const builtIn = ["both", "ma_crossover", "rsi_strategy"];
-        // Remove old custom pills
         container.querySelectorAll("[data-custom]").forEach((b) => b.remove());
         allStrategies.forEach((s) => {
           if (!builtIn.includes(s.name)) {
@@ -1302,20 +1905,124 @@
           }
         });
       }
-
       loadStrategies();
 
-      /* ═══════════════════════════════════════════
-   CHART
-═══════════════════════════════════════════ */
+      /* ══ NEW: Watchlist mini-charts on Live tab ══ */
+      let wlCharts = {};
+      async function loadWatchlist() {
+        const syms = document
+          .getElementById("wl-syms")
+          .value.trim()
+          .toUpperCase()
+          .split(",")
+          .filter(Boolean)
+          .slice(0, 6)
+          .join(",");
+        const d = await fetchJ(
+          "/api/multi-chart?symbols=" +
+            syms +
+            "&timeframes=1D,1D,1D,1D,1D,1D&days=60",
+        );
+        if (!d || !d.charts) {
+          document.getElementById("wl-grid").innerHTML =
+            '<div style="color:#fc8181;font-size:12px;padding:12px">Failed to load</div>';
+          return;
+        }
+        Object.values(wlCharts).forEach((c) => {
+          try {
+            c.destroy();
+          } catch {}
+        });
+        wlCharts = {};
+        document.getElementById("wl-grid").innerHTML = d.charts
+          .map((cd) => {
+            const cl = cd.close || [];
+            const last = cl[cl.length - 1] || 0;
+            const first = cl[0] || last;
+            const chg = first ? (((last - first) / first) * 100).toFixed(2) : 0;
+            const up = Number(chg) >= 0;
+            const col = up ? "#68d391" : "#fc8181";
+            return `<div class="wlc ${up ? "wup" : "wdn"}" onclick="setSym('${cd.symbol}');switchTab('chart')">
+      <div style="display:flex;justify-content:space-between"><span class="wl-sym">${cd.symbol}</span><span style="font-size:10px;color:#4a5568">→ Chart</span></div>
+      <div class="wl-price" style="color:${col}">$${last}</div>
+      <div style="font-size:11px;font-weight:700;color:${col}">${up ? "+" : ""}${chg}%</div>
+      ${cd.error ? `<div style="color:#fc8181;font-size:9px">${cd.error}</div>` : ""}
+      <canvas id="wlc-${cd.symbol}" height="50" style="margin-top:6px"></canvas>
+    </div>`;
+          })
+          .join("");
+        d.charts.forEach((cd) => {
+          const cv = document.getElementById("wlc-" + cd.symbol);
+          if (!cv || !cd.close || !cd.close.length) return;
+          const cl = cd.close;
+          const last = cl[cl.length - 1] || 0;
+          const first = cl[0] || last;
+          const up = last >= first;
+          const ch = new Chart(cv.getContext("2d"), {
+            type: "line",
+            data: {
+              labels: cd.dates,
+              datasets: [
+                {
+                  data: cd.close,
+                  borderColor: up ? "#68d391" : "#fc8181",
+                  backgroundColor: up
+                    ? "rgba(104,211,145,0.08)"
+                    : "rgba(252,129,129,0.08)",
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  fill: true,
+                  tension: 0.2,
+                },
+                ...(cd.ma50
+                  ? [
+                      {
+                        data: cd.ma50,
+                        borderColor: "rgba(99,179,237,0.4)",
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        backgroundColor: "transparent",
+                      },
+                    ]
+                  : []),
+              ],
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false },
+              },
+              scales: { x: { display: false }, y: { display: false } },
+            },
+          });
+          wlCharts[cd.symbol] = ch;
+        });
+        document.getElementById("wl-updated").textContent =
+          "Updated " + new Date().toLocaleTimeString();
+      }
+      loadWatchlist();
+      setInterval(() => {
+        if (document.getElementById("tab-live").classList.contains("active"))
+          loadWatchlist();
+      }, 60000);
+
+      /* ══ CHART — working code + zoom + new panels ══ */
       let pChart = null,
         rChart = null,
+        volChart = null,
+        macdChart = null,
         chartLoaded = false;
       let curTF = "5min",
         curCType = "line";
       let maVis = { ma21: true, ma50: true, ma200: true };
+      let panVis = { vol: true, rsi: false, macd: false };
       let lastData = null,
         crossX = -1;
+      let rtInterval = null,
+        rtOn = false;
 
       function setTF(tf, btn) {
         curTF = tf;
@@ -1325,7 +2032,6 @@
         btn.classList.add("tf-on");
         loadChart();
       }
-
       function setCType(t, btn) {
         curCType = t;
         document
@@ -1334,26 +2040,54 @@
         btn.classList.add("cto");
         if (lastData) drawPrice(lastData);
       }
-
       function toggleMA(k) {
         maVis[k] = !maVis[k];
         document.getElementById("tog-" + k).classList.toggle("pon", maVis[k]);
         if (lastData) drawPrice(lastData);
         buildLegend();
       }
-
+      function togPanel(p) {
+        panVis[p] = !panVis[p];
+        document.getElementById("tog-" + p).classList.toggle("pon", panVis[p]);
+        document.getElementById(p + "-panel").style.display = panVis[p]
+          ? "block"
+          : "none";
+        if (lastData && panVis[p]) {
+          if (p === "rsi") drawRSI(lastData);
+          if (p === "vol") drawVol(lastData);
+          if (p === "macd") drawMACD(lastData);
+        }
+      }
       function setSym(s) {
         document.getElementById("csym").value = s;
         loadChart();
       }
+      function resetZoom() {
+        if (pChart && pChart.resetZoom) pChart.resetZoom();
+      }
+      function toggleRT() {
+        rtOn = !rtOn;
+        const btn = document.getElementById("rt-btn");
+        if (rtOn) {
+          btn.textContent = "⟳ Live: ON";
+          btn.classList.add("pon");
+          rtInterval = setInterval(() => loadChart(true), 15000);
+        } else {
+          btn.textContent = "⟳ Live: OFF";
+          btn.classList.remove("pon");
+          clearInterval(rtInterval);
+        }
+      }
 
-      async function loadChart() {
+      async function loadChart(silent = false) {
         const sym = document.getElementById("csym").value.trim().toUpperCase();
         const days = document.getElementById("chart-days").value;
         if (!sym) return;
-        document.getElementById("spinner-wrap").style.display = "inline";
-        document.getElementById("chart-label").textContent =
-          sym + " — " + curTF;
+        if (!silent) {
+          document.getElementById("spinner-wrap").style.display = "inline";
+          document.getElementById("chart-label").textContent =
+            sym + " — " + curTF;
+        }
         try {
           const d = await fetchJ(
             "/api/chart4/" + sym + "?days=" + days + "&timeframe=" + curTF,
@@ -1362,10 +2096,12 @@
             throw new Error("No data returned");
           lastData = d;
           drawPrice(d);
-          drawRSI(d);
-          const cl = d.close;
-          const last = cl[cl.length - 1];
-          const prev = cl[cl.length - 2] || last;
+          if (panVis.vol) drawVol(d);
+          if (panVis.rsi) drawRSI(d);
+          if (panVis.macd) drawMACD(d);
+          const cl = d.close,
+            last = cl[cl.length - 1],
+            prev = cl[cl.length - 2] || last;
           const chg = (((last - prev) / prev) * 100).toFixed(2);
           const col = chg >= 0 ? "#68d391" : "#fc8181";
           document.getElementById("price-display").innerHTML =
@@ -1381,10 +2117,12 @@
           buildLegend();
           chartLoaded = true;
         } catch (e) {
-          document.getElementById("chart-label").textContent =
-            "Error: " + e.message;
+          if (!silent)
+            document.getElementById("chart-label").textContent =
+              "Error: " + e.message;
         } finally {
-          document.getElementById("spinner-wrap").style.display = "none";
+          if (!silent)
+            document.getElementById("spinner-wrap").style.display = "none";
         }
       }
 
@@ -1392,8 +2130,8 @@
         const cl = (d.close || []).filter((v) => v != null);
         if (cl.length < 10) return;
         const last = cl[cl.length - 1];
-        const ma50 = (d.ma50 || []).filter((v) => v != null);
-        const ma200 = (d.ma200 || []).filter((v) => v != null);
+        const ma50 = (d.ma50 || []).filter((v) => v != null),
+          ma200 = (d.ma200 || []).filter((v) => v != null);
         const lm50 = ma50[ma50.length - 1],
           lm200 = ma200[ma200.length - 1];
         const c20 =
@@ -1422,15 +2160,17 @@
             lbl = "Bearish";
           }
         }
-        const rsi = (d.rsi || []).filter((v) => v != null);
-        const lr = rsi[rsi.length - 1];
+        const rsi = (d.rsi || []).filter((v) => v != null),
+          lr = rsi[rsi.length - 1];
         let rl = "";
         if (lr != null) {
           if (lr > 70) rl = " OB";
           else if (lr < 30) rl = " OS";
         }
-        document.getElementById("trend-wrap").innerHTML =
+        const badge =
           '<span class="trend-badge ' + trend + '">' + lbl + rl + "</span>";
+        document.getElementById("trend-wrap").innerHTML = badge;
+        document.getElementById("trend-wrap2").innerHTML = badge;
         if (lr != null)
           document.getElementById("rsi-display").textContent =
             "RSI " + lr.toFixed(1);
@@ -1451,8 +2191,7 @@
               (off ? " loff" : "") +
               '"' +
               (it.fixed ? "" : " onclick=\"toggleMA('" + it.k + "')\"") +
-              ">" +
-              '<div class="ld" style="background:' +
+              '><div class="ld" style="background:' +
               it.c +
               '"></div><span>' +
               it.l +
@@ -1464,6 +2203,7 @@
 
       function setupCrosshair(canvas, data) {
         const tip = document.getElementById("xtip");
+        if (!tip) return;
         function handle(mx) {
           const pad = { l: 52, r: 10 };
           const cw = canvas.width - pad.l - pad.r;
@@ -1609,6 +2349,14 @@
                         : null,
                   },
                 },
+                zoom: {
+                  zoom: {
+                    wheel: { enabled: true },
+                    pinch: { enabled: true },
+                    mode: "xy",
+                  },
+                  pan: { enabled: true, mode: "xy" },
+                },
               },
               scales: {
                 x: {
@@ -1745,6 +2493,75 @@
         pChart = null;
       }
 
+      /* NEW: Volume chart */
+      function drawVol(d) {
+        const ex = Chart.getChart("vol-canvas");
+        if (ex) ex.destroy();
+        if (!d.volume || !d.volume.some((v) => v > 0)) return;
+        const colors = d.close.map((c, i) =>
+          i === 0 || c >= ((d.open && d.open[i]) || c)
+            ? "rgba(104,211,145,0.6)"
+            : "rgba(252,129,129,0.6)",
+        );
+        volChart = new Chart(
+          document.getElementById("vol-canvas").getContext("2d"),
+          {
+            type: "bar",
+            data: {
+              labels: d.dates,
+              datasets: [
+                {
+                  label: "Volume",
+                  data: d.volume,
+                  backgroundColor: colors,
+                  borderWidth: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#1a1d27",
+                  borderColor: "#2d3748",
+                  borderWidth: 1,
+                  bodyColor: "#e2e8f0",
+                  callbacks: {
+                    label: (c) => "Vol: " + Number(c.parsed.y).toLocaleString(),
+                  },
+                },
+              },
+              scales: {
+                x: {
+                  ticks: {
+                    color: "#4a5568",
+                    maxTicksLimit: 6,
+                    font: { size: 9 },
+                  },
+                  grid: { color: "#0d1220" },
+                },
+                y: {
+                  ticks: {
+                    color: "#4a5568",
+                    font: { size: 9 },
+                    callback: (v) =>
+                      v >= 1e6
+                        ? (v / 1e6).toFixed(1) + "M"
+                        : v >= 1e3
+                          ? (v / 1e3).toFixed(0) + "K"
+                          : "" + v,
+                  },
+                  grid: { color: "#0d1220" },
+                },
+              },
+            },
+          },
+        );
+      }
+
+      /* Original RSI chart (unchanged) */
       function drawRSI(d) {
         const ex = Chart.getChart("rsi-canvas");
         if (ex) ex.destroy();
@@ -1822,9 +2639,317 @@
         );
       }
 
-      /* ═══════════════════════════════════════════
-   BACKTEST
-═══════════════════════════════════════════ */
+      /* NEW: MACD chart */
+      function drawMACD(d) {
+        const ex = Chart.getChart("macd-canvas");
+        if (ex) ex.destroy();
+        if (!d.macd || !d.macd.some((v) => v != null)) {
+          document.getElementById("macd-vals").textContent = "Need 27+ bars";
+          return;
+        }
+        const hc = (d.macd_hist || []).map((v) =>
+          v == null
+            ? "transparent"
+            : v >= 0
+              ? "rgba(104,211,145,0.7)"
+              : "rgba(252,129,129,0.7)",
+        );
+        const lm = (d.macd || []).filter((v) => v != null).slice(-1)[0] || 0;
+        const ls =
+          (d.macd_signal || []).filter((v) => v != null).slice(-1)[0] || 0;
+        document.getElementById("macd-vals").textContent =
+          `MACD:${lm.toFixed(3)} Sig:${ls.toFixed(3)}`;
+        macdChart = new Chart(
+          document.getElementById("macd-canvas").getContext("2d"),
+          {
+            type: "bar",
+            data: {
+              labels: d.dates,
+              datasets: [
+                {
+                  type: "line",
+                  label: "MACD",
+                  data: d.macd,
+                  borderColor: "#63b3ed",
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  spanGaps: true,
+                  backgroundColor: "transparent",
+                },
+                {
+                  type: "line",
+                  label: "Signal",
+                  data: d.macd_signal,
+                  borderColor: "#f687b3",
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  spanGaps: true,
+                  backgroundColor: "transparent",
+                },
+                {
+                  type: "bar",
+                  label: "Hist",
+                  data: d.macd_hist,
+                  backgroundColor: hc,
+                  borderWidth: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: {
+                  labels: { color: "#718096", font: { size: 9 }, boxWidth: 8 },
+                },
+                tooltip: {
+                  backgroundColor: "#1a1d27",
+                  borderColor: "#2d3748",
+                  borderWidth: 1,
+                  bodyColor: "#e2e8f0",
+                },
+              },
+              scales: {
+                x: {
+                  ticks: {
+                    color: "#4a5568",
+                    maxTicksLimit: 6,
+                    font: { size: 9 },
+                  },
+                  grid: { color: "#0d1220" },
+                },
+                y: {
+                  ticks: {
+                    color: "#4a5568",
+                    font: { size: 9 },
+                    callback: (v) => v.toFixed(2),
+                  },
+                  grid: { color: "#0d1220" },
+                },
+              },
+            },
+          },
+        );
+      }
+
+      /* NEW: 2x2 Multi-Study Panel */
+      let studyCharts = [null, null, null, null];
+      async function loadStudies() {
+        const syms = [0, 1, 2, 3].map((i) =>
+          document
+            .getElementById("s" + i + "-sym")
+            .value.trim()
+            .toUpperCase(),
+        );
+        const tfs = [0, 1, 2, 3].map(
+          (i) => document.getElementById("s" + i + "-tf").value,
+        );
+        const inds = [0, 1, 2, 3].map(
+          (i) => document.getElementById("s" + i + "-ind").value,
+        );
+        const d = await fetchJ(
+          "/api/multi-chart?symbols=" +
+            syms.join(",") +
+            "&timeframes=" +
+            tfs.join(",") +
+            "&days=180",
+        );
+        if (!d || !d.charts) return;
+        studyCharts.forEach((c) => {
+          try {
+            c && c.destroy();
+          } catch {}
+        });
+        studyCharts = [null, null, null, null];
+        d.charts.forEach((cd, i) => {
+          const cv = document.getElementById("sc" + i);
+          if (!cv || !cd.close || !cd.close.length) return;
+          const ind = inds[i];
+          let datasets = [],
+            yOpts = {};
+          if (ind === "price") {
+            datasets = [
+              {
+                label: "Price",
+                data: cd.close,
+                borderColor: "#63b3ed",
+                backgroundColor: "rgba(99,179,237,0.05)",
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true,
+                tension: 0.1,
+              },
+            ];
+            if (cd.ma50)
+              datasets.push({
+                label: "MA50",
+                data: cd.ma50,
+                borderColor: "#68d391",
+                borderWidth: 1,
+                pointRadius: 0,
+                spanGaps: true,
+                backgroundColor: "transparent",
+              });
+            if (cd.ma200)
+              datasets.push({
+                label: "MA200",
+                data: cd.ma200,
+                borderColor: "#fc8181",
+                borderWidth: 1,
+                pointRadius: 0,
+                spanGaps: true,
+                backgroundColor: "transparent",
+              });
+            yOpts = {
+              ticks: {
+                color: "#4a5568",
+                font: { size: 8 },
+                callback: (v) => "$" + Number(v).toFixed(0),
+              },
+              grid: { color: "#0d1220" },
+            };
+          } else if (ind === "rsi") {
+            datasets = [
+              {
+                label: "RSI",
+                data: cd.rsi,
+                borderColor: "#b794f4",
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.2,
+                backgroundColor: "rgba(183,148,244,0.05)",
+                fill: true,
+                spanGaps: true,
+              },
+              {
+                data: Array(cd.dates.length).fill(70),
+                borderColor: "rgba(252,129,129,0.3)",
+                borderWidth: 1,
+                borderDash: [3, 3],
+                pointRadius: 0,
+              },
+              {
+                data: Array(cd.dates.length).fill(30),
+                borderColor: "rgba(104,211,145,0.3)",
+                borderWidth: 1,
+                borderDash: [3, 3],
+                pointRadius: 0,
+              },
+            ];
+            yOpts = {
+              min: 0,
+              max: 100,
+              ticks: { color: "#4a5568", font: { size: 8 }, stepSize: 25 },
+              grid: { color: "#0d1220" },
+            };
+          } else if (ind === "macd") {
+            const hc = (cd.macd_hist || []).map((v) =>
+              v == null
+                ? "transparent"
+                : v >= 0
+                  ? "rgba(104,211,145,0.6)"
+                  : "rgba(252,129,129,0.6)",
+            );
+            datasets = [
+              {
+                type: "line",
+                label: "MACD",
+                data: cd.macd,
+                borderColor: "#63b3ed",
+                borderWidth: 1.5,
+                pointRadius: 0,
+                spanGaps: true,
+                backgroundColor: "transparent",
+              },
+              {
+                type: "line",
+                label: "Sig",
+                data: cd.macd_signal,
+                borderColor: "#f687b3",
+                borderWidth: 1.5,
+                pointRadius: 0,
+                spanGaps: true,
+                backgroundColor: "transparent",
+              },
+              {
+                type: "bar",
+                label: "Hist",
+                data: cd.macd_hist,
+                backgroundColor: hc,
+                borderWidth: 0,
+              },
+            ];
+            yOpts = {
+              ticks: {
+                color: "#4a5568",
+                font: { size: 8 },
+                callback: (v) => v.toFixed(1),
+              },
+              grid: { color: "#0d1220" },
+            };
+          } else {
+            // vol
+            const vc = (cd.close || []).map((c, j) =>
+              j === 0 || c >= ((cd.open && cd.open[j]) || c)
+                ? "rgba(104,211,145,0.6)"
+                : "rgba(252,129,129,0.6)",
+            );
+            datasets = [
+              {
+                type: "bar",
+                label: "Vol",
+                data: cd.volume,
+                backgroundColor: vc,
+                borderWidth: 0,
+              },
+            ];
+            yOpts = {
+              ticks: {
+                color: "#4a5568",
+                font: { size: 8 },
+                callback: (v) =>
+                  v >= 1e6
+                    ? (v / 1e6).toFixed(1) + "M"
+                    : v >= 1e3
+                      ? (v / 1e3).toFixed(0) + "K"
+                      : "" + v,
+              },
+              grid: { color: "#0d1220" },
+            };
+          }
+          const lbl = cd.symbol + " " + tfs[i] + " " + ind.toUpperCase();
+          studyCharts[i] = new Chart(cv.getContext("2d"), {
+            type: ind === "vol" ? "bar" : "line",
+            data: { labels: cd.dates, datasets },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: { display: false },
+                title: {
+                  display: true,
+                  text: lbl,
+                  color: "#718096",
+                  font: { size: 9, weight: "600" },
+                },
+              },
+              scales: {
+                x: {
+                  ticks: {
+                    color: "#4a5568",
+                    maxTicksLimit: 4,
+                    font: { size: 8 },
+                  },
+                  grid: { color: "#0d1220" },
+                },
+                y: yOpts,
+              },
+            },
+          });
+        });
+      }
+
+      /* ══ BACKTEST — exact working code ══ */
       let btCharts = [];
       function setBTSym(s) {
         document.getElementById("bt-sym").value = s;
@@ -1865,10 +2990,12 @@
             .join("");
         } else if (key === "ma_crossover") {
           pd.style.display = "grid";
-          pd.innerHTML = `<div class="field"><label>Fast MA</label><input type="number" id="btp-fast_ma" value="50" min="5" max="199"></div><div class="field"><label>Slow MA</label><input type="number" id="btp-slow_ma" value="200" min="10" max="500"></div>`;
+          pd.innerHTML =
+            '<div class="field"><label>Fast MA</label><input type="number" id="btp-fast_ma" value="50" min="5" max="199"></div><div class="field"><label>Slow MA</label><input type="number" id="btp-slow_ma" value="200" min="10" max="500"></div>';
         } else if (key === "rsi_strategy") {
           pd.style.display = "grid";
-          pd.innerHTML = `<div class="field"><label>RSI Period</label><input type="number" id="btp-rsi_period" value="14" min="5" max="30"></div><div class="field"><label>Oversold</label><input type="number" id="btp-oversold" value="30"></div><div class="field"><label>Overbought</label><input type="number" id="btp-overbought" value="70"></div>`;
+          pd.innerHTML =
+            '<div class="field"><label>RSI Period</label><input type="number" id="btp-rsi_period" value="14" min="5" max="30"></div><div class="field"><label>Oversold</label><input type="number" id="btp-oversold" value="30"></div><div class="field"><label>Overbought</label><input type="number" id="btp-overbought" value="70"></div>';
         } else {
           pd.style.display = "none";
         }
@@ -1961,8 +3088,8 @@
           html = '<div class="bt-cmp">';
           results.forEach((r, idx) => {
             const sells = r.trades.filter((t) => t.side === "SELL");
-            const wins = sells.filter((t) => t.pnl > 0);
-            const losses = sells.filter((t) => t.pnl <= 0);
+            const wins = sells.filter((t) => t.pnl > 0),
+              losses = sells.filter((t) => t.pnl <= 0);
             const aw = wins.length
               ? (wins.reduce((a, t) => a + t.pnl, 0) / wins.length).toFixed(2)
               : "0";
@@ -1972,9 +3099,7 @@
                 ).toFixed(2)
               : "0";
             html += `<div class="bt-side">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:5px">
-          <span class="stag ${getTag(r.strategy)}">${r.strategy}</span>${getTrendBadge(r)}
-        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:5px"><span class="stag ${getTag(r.strategy)}">${r.strategy}</span>${getTrendBadge(r)}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px">
           <div class="rcard"><div class="rlabel">Return</div><div class="rval" style="color:${pc(r.total_return_pct)}">${fp(r.total_return_pct)}</div></div>
           <div class="rcard"><div class="rlabel">Net P&L</div><div class="rval" style="color:${pc(r.total_pnl)}">${f$(r.total_pnl)}</div></div>
@@ -1984,34 +3109,20 @@
           <div class="rcard"><div class="rlabel">Avg loss</div><div class="rval" style="color:#fc8181">-$${al}</div></div>
         </div>
         <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Equity curve</div>
-        <canvas id="eq${idx}" height="110" style="margin-bottom:8px"></canvas>
+        <canvas id="eq${idx}" height="90" style="margin-bottom:8px"></canvas>
         <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Trades</div>
-        <div class="tbl-wrap" style="max-height:140px;overflow-y:auto"><table>
+        <div class="tbl-wrap" style="max-height:130px;overflow-y:auto"><table>
           <thead><tr><th>Date</th><th>Side</th><th>Price</th><th>P&L</th></tr></thead>
-          <tbody>${
-            r.trades.length
-              ? r.trades
-                  .map(
-                    (t) =>
-                      `<tr><td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td>
-            <td class="${t.side.toLowerCase()}">${t.side}</td>
-            <td>$${Number(t.price).toFixed(2)}</td>
-            <td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"};font-size:11px">${t.pnl != null ? f$(t.pnl) : "—"}</td></tr>`,
-                  )
-                  .join("")
-              : '<tr class="empty-row"><td colspan="4">No trades</td></tr>'
-          }
+          <tbody>${r.trades.length ? r.trades.map((t) => `<tr><td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td><td class="${t.side.toLowerCase()}">${t.side}</td><td>$${Number(t.price).toFixed(2)}</td><td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"};font-size:11px">${t.pnl != null ? f$(t.pnl) : "—"}</td></tr>`).join("") : '<tr class="empty-row"><td colspan="4">No trades</td></tr>'}
           </tbody></table></div>
       </div>`;
           });
           html += "</div>";
         } else {
           const r = results[0];
+          // Show buy/sell markers legend
           html = `<div style="margin:0 16px 16px"><div style="background:#111522;border:1px solid #1e2740;border-radius:10px;padding:14px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <span class="stag ${getTag(r.strategy)}">${r.strategy}</span>${getTrendBadge(r)}
-        <span style="color:#4a5568;font-size:12px">${sym} · ${r.total_trades} trades</span>
-      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="stag ${getTag(r.strategy)}">${r.strategy}</span>${getTrendBadge(r)}<span style="color:#4a5568;font-size:12px">${sym} · ${r.total_trades} trades</span></div>
       <div class="rgrid">
         <div class="rcard"><div class="rlabel">Return</div><div class="rval" style="color:${pc(r.total_return_pct)}">${fp(r.total_return_pct)}</div></div>
         <div class="rcard"><div class="rlabel">Net P&L</div><div class="rval" style="color:${pc(r.total_pnl)}">${f$(r.total_pnl)}</div></div>
@@ -2020,25 +3131,19 @@
         <div class="rcard"><div class="rlabel">Wins</div><div class="rval" style="color:#68d391">${r.winning_trades}</div></div>
         <div class="rcard"><div class="rlabel">Losses</div><div class="rval" style="color:#fc8181">${r.losing_trades}</div></div>
       </div>
-      <div style="margin-top:10px;font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Equity curve</div>
-      <canvas id="eq0" height="150"></canvas>
-      <div style="margin-top:10px;font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Trade log</div>
+      <div class="mk-row">
+        <div class="mk"><div class="mkd" style="background:#68d391"></div>BUY entry</div>
+        <div class="mk"><div class="mkd" style="background:#f6e05e"></div>SELL (profit)</div>
+        <div class="mk"><div class="mkd" style="background:#fc8181"></div>SELL (loss)</div>
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Price + signals</div>
+      <canvas id="bt-sig" height="150" style="margin-bottom:10px"></canvas>
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Equity curve</div>
+      <canvas id="eq0" height="90" style="margin-bottom:10px"></canvas>
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;font-weight:600">Trade log</div>
       <div class="tbl-wrap" style="max-height:200px;overflow-y:auto"><table>
         <thead><tr><th>Date</th><th>Side</th><th>Qty</th><th>Price</th><th>Reason</th><th>P&L</th></tr></thead>
-        <tbody>${
-          r.trades.length
-            ? r.trades
-                .map(
-                  (t) =>
-                    `<tr><td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td>
-          <td class="${t.side.toLowerCase()}">${t.side}</td><td>${t.qty || "—"}</td>
-          <td>$${Number(t.price).toFixed(2)}</td>
-          <td style="color:#718096;font-size:10px">${t.reason || ""}</td>
-          <td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"}">${t.pnl != null ? f$(t.pnl) : "—"}</td></tr>`,
-                )
-                .join("")
-            : '<tr class="empty-row"><td colspan="6">No trades</td></tr>'
-        }
+        <tbody>${r.trades.length ? r.trades.map((t) => `<tr><td style="color:#4a5568;font-size:10px">${String(t.date).substring(0, 10)}</td><td class="${t.side.toLowerCase()}">${t.side}</td><td>${t.qty || "—"}</td><td>$${Number(t.price).toFixed(2)}</td><td style="color:#718096;font-size:10px">${t.reason || ""}</td><td style="color:${t.pnl != null ? (t.pnl >= 0 ? "#68d391" : "#fc8181") : "#4a5568"}">${t.pnl != null ? f$(t.pnl) : "—"}</td></tr>`).join("") : '<tr class="empty-row"><td colspan="6">No trades</td></tr>'}
         </tbody></table></div>
     </div></div>`;
         }
@@ -2122,6 +3227,268 @@
           });
           btCharts.push(ch);
         });
+
+        // NEW: Draw price + buy/sell markers for single strategy
+        if (results.length === 1) {
+          const r = results[0];
+          const cv = document.getElementById("bt-sig");
+          if (!cv) return;
+          const buyPts = [],
+            sellWPts = [],
+            sellLPts = [];
+          const equityDates = r.equity_curve.map((p) => p.date);
+          const equityPrices = r.equity_curve.map((p) => p.equity);
+          r.trades.forEach((t) => {
+            const pt = {
+              x: String(t.date).substring(0, 10),
+              y: Number(t.price),
+            };
+            if (t.side === "BUY") buyPts.push(pt);
+            else if ((t.pnl || 0) >= 0) sellWPts.push(pt);
+            else sellLPts.push(pt);
+          });
+          // Get price data from equity curve dates
+          const priceLine = r.trades.length ? [] : [];
+          const ch = new Chart(cv.getContext("2d"), {
+            type: "line",
+            data: {
+              labels: equityDates,
+              datasets: [
+                {
+                  label: "Equity",
+                  data: equityPrices,
+                  borderColor: "#63b3ed",
+                  backgroundColor: "rgba(99,179,237,0.05)",
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  fill: true,
+                  tension: 0.1,
+                },
+                {
+                  label: "BUY",
+                  data: buyPts,
+                  type: "scatter",
+                  pointStyle: "triangle",
+                  pointRadius: 7,
+                  rotation: 0,
+                  pointBackgroundColor: "#68d391",
+                  pointBorderColor: "#fff",
+                  pointBorderWidth: 1,
+                  showLine: false,
+                },
+                {
+                  label: "SELL✓",
+                  data: sellWPts,
+                  type: "scatter",
+                  pointStyle: "triangle",
+                  pointRadius: 7,
+                  rotation: 180,
+                  pointBackgroundColor: "#f6e05e",
+                  pointBorderColor: "#fff",
+                  pointBorderWidth: 1,
+                  showLine: false,
+                },
+                {
+                  label: "SELL✗",
+                  data: sellLPts,
+                  type: "scatter",
+                  pointStyle: "triangle",
+                  pointRadius: 7,
+                  rotation: 180,
+                  pointBackgroundColor: "#fc8181",
+                  pointBorderColor: "#fff",
+                  pointBorderWidth: 1,
+                  showLine: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              animation: false,
+              plugins: {
+                legend: {
+                  labels: { color: "#718096", font: { size: 9 }, boxWidth: 8 },
+                },
+                tooltip: {
+                  backgroundColor: "#1a1d27",
+                  borderColor: "#2d3748",
+                  borderWidth: 1,
+                  bodyColor: "#e2e8f0",
+                },
+              },
+              scales: {
+                x: {
+                  type: "category",
+                  ticks: {
+                    color: "#4a5568",
+                    maxTicksLimit: 6,
+                    font: { size: 9 },
+                  },
+                  grid: { color: "#0d1220" },
+                },
+                y: {
+                  ticks: {
+                    color: "#4a5568",
+                    font: { size: 9 },
+                    callback: (v) => "$" + Number(v).toLocaleString(),
+                  },
+                  grid: { color: "#0d1220" },
+                },
+              },
+            },
+          });
+          btCharts.push(ch);
+        }
+      }
+
+      /* NEW: Run all 4 BT studies */
+      let btStudyCharts = [null, null, null, null];
+      async function runBTStudies() {
+        btStudyCharts.forEach((c) => {
+          try {
+            c && c.destroy();
+          } catch {}
+        });
+        btStudyCharts = [null, null, null, null];
+        for (let i = 0; i < 4; i++) {
+          document.getElementById("bsi" + i).textContent = "Running...";
+        }
+        const cash =
+          parseFloat(document.getElementById("bt-cash").value) || 10000;
+
+        for (let i = 0; i < 4; i++) {
+          const sym = document
+            .getElementById("bs" + i + "-sym")
+            .value.trim()
+            .toUpperCase();
+          const strat = document.getElementById("bs" + i + "-strat").value;
+          const days = parseInt(
+            document.getElementById("bs" + i + "-days").value,
+          );
+          try {
+            const body = {
+              symbol: sym,
+              strategy: strat,
+              days,
+              cash,
+              fast_ma: 50,
+              slow_ma: 200,
+              rsi_period: 14,
+              oversold: 30,
+              overbought: 70,
+            };
+            const res = await fetch("/api/backtest/run", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Error");
+            const r = data.results[data.results.length - 1];
+            const cv = document.getElementById("bsc" + i);
+            if (!cv || !r.equity_curve || !r.equity_curve.length) continue;
+            const ret = r.total_return_pct;
+            const col = ret >= 0 ? "#68d391" : "#fc8181";
+            document.getElementById("bsi" + i).textContent =
+              sym +
+              " " +
+              strat.replace("_", " ") +
+              ": " +
+              (ret >= 0 ? "+" : "") +
+              ret.toFixed(1) +
+              "% | WR:" +
+              r.win_rate_pct.toFixed(0) +
+              "% | " +
+              r.total_trades +
+              " trades";
+            document.getElementById("bsi" + i).style.color = col;
+            const ch = new Chart(cv.getContext("2d"), {
+              type: "line",
+              data: {
+                datasets: [
+                  {
+                    label: sym,
+                    data: r.equity_curve.map((p) => ({
+                      x: p.date,
+                      y: p.equity,
+                    })),
+                    borderColor: col,
+                    backgroundColor: "transparent",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.3,
+                  },
+                  {
+                    label: "Start",
+                    data: r.equity_curve.map((p) => ({ x: p.date, y: cash })),
+                    borderColor: "#2d3748",
+                    backgroundColor: "transparent",
+                    borderWidth: 1,
+                    borderDash: [3, 3],
+                    pointRadius: 0,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                animation: false,
+                plugins: {
+                  legend: { display: false },
+                  title: {
+                    display: true,
+                    text:
+                      sym +
+                      " " +
+                      strat
+                        .replace("_crossover", "MA")
+                        .replace("_strategy", ""),
+                    color: "#718096",
+                    font: { size: 9 },
+                  },
+                  tooltip: {
+                    backgroundColor: "#1a1d27",
+                    borderColor: "#2d3748",
+                    borderWidth: 1,
+                    bodyColor: "#e2e8f0",
+                    callbacks: {
+                      label: (c) =>
+                        c.dataset.label +
+                        ": $" +
+                        Number(c.parsed.y).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }),
+                    },
+                  },
+                },
+                scales: {
+                  x: {
+                    type: "category",
+                    ticks: {
+                      color: "#4a5568",
+                      maxTicksLimit: 3,
+                      font: { size: 8 },
+                    },
+                    grid: { color: "#111827" },
+                  },
+                  y: {
+                    ticks: {
+                      color: "#4a5568",
+                      font: { size: 8 },
+                      callback: (v) => "$" + Number(v).toLocaleString(),
+                    },
+                    grid: { color: "#111827" },
+                  },
+                },
+              },
+            });
+            btStudyCharts[i] = ch;
+          } catch (e) {
+            document.getElementById("bsi" + i).textContent =
+              "Error: " + e.message;
+            document.getElementById("bsi" + i).style.color = "#fc8181";
+          }
+        }
       }
     </script>
   </body>
