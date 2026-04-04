@@ -279,6 +279,47 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
             clean = lambda s: [round(v, 4) if v == v else None for v in s.tolist()]
             macd_line, macd_signal, macd_hist = clean(ml), clean(ms), clean(mh)
 
+        # Supertrend (ATR period=10, multiplier=3.0)
+        st_vals = [None] * n
+        st_dir = [None] * n
+        if n >= 12 and "high" in df.columns and "low" in df.columns:
+            import numpy as np
+
+            hl2 = (df["high"] + df["low"]) / 2
+            tr_s = pd.concat(
+                [
+                    df["high"] - df["low"],
+                    abs(df["high"] - df["close"].shift(1)),
+                    abs(df["low"] - df["close"].shift(1)),
+                ],
+                axis=1,
+            ).max(axis=1)
+            atr_s = tr_s.rolling(10).mean()
+            ub = (hl2 + 3.0 * atr_s).tolist()
+            lb = (hl2 - 3.0 * atr_s).tolist()
+            cl_s = df["close"].tolist()
+            direction = [1] * n
+            for i in range(1, n):
+                if (
+                    lb[i] is None
+                    or ub[i] is None
+                    or lb[i - 1] is None
+                    or ub[i - 1] is None
+                ):
+                    continue
+                if cl_s[i] > (ub[i - 1] or 0):
+                    direction[i] = 1
+                elif cl_s[i] < (lb[i - 1] or 0):
+                    direction[i] = -1
+                else:
+                    direction[i] = direction[i - 1]
+                    if direction[i] == 1 and lb[i] < lb[i - 1]:
+                        lb[i] = lb[i - 1]
+                    if direction[i] == -1 and ub[i] > ub[i - 1]:
+                        ub[i] = ub[i - 1]
+                st_vals[i] = round(lb[i] if direction[i] == 1 else ub[i], 2)
+                st_dir[i] = direction[i]
+
         # VWAP (rolling 20-bar proxy for daily VWAP)
         vwap_vals = [None] * n
         if "volume" in df.columns and n >= 5:
@@ -299,11 +340,14 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
             "ma200": safe_ma(200),
             "ema9": safe_ema(9),
             "ema21": safe_ema(21),
+            "ema50": safe_ema(50),
             "rsi": rsi_vals,
             "macd": macd_line,
             "macd_signal": macd_signal,
             "macd_hist": macd_hist,
             "vwap": vwap_vals,
+            "supertrend": st_vals,
+            "st_dir": st_dir,
             "count": n,
         }
     except Exception as e:
@@ -378,6 +422,69 @@ async def multi_chart(
                 _mh = _ml - _ms
                 clean = lambda s: [round(v, 4) if v == v else None for v in s.tolist()]
                 ml, ms, mh = clean(_ml), clean(_ms), clean(_mh)
+
+            # EMA
+            def ema_fn(p):
+                return [
+                    round(v, 2) if v == v else None
+                    for v in df["close"].ewm(span=p, adjust=False).mean().tolist()
+                ]
+
+            # VWAP
+            vwap_mc = [None] * n
+            if "volume" in df.columns and n >= 5:
+                tp_mc = (
+                    (df["high"] + df["low"] + df["close"]) / 3
+                    if "high" in df.columns
+                    else df["close"]
+                )
+                vol_mc = df["volume"].replace(0, 1)
+                vwap_mc = [
+                    round(v, 2) if v == v else None
+                    for v in (
+                        (tp_mc * vol_mc).rolling(20).sum() / vol_mc.rolling(20).sum()
+                    ).tolist()
+                ]
+            # Supertrend
+            st_mc = [None] * n
+            stdir_mc = [None] * n
+            if n >= 12 and "high" in df.columns:
+                hl2_mc = (df["high"] + df["low"]) / 2
+                tr_mc = pd.concat(
+                    [
+                        df["high"] - df["low"],
+                        abs(df["high"] - df["close"].shift(1)),
+                        abs(df["low"] - df["close"].shift(1)),
+                    ],
+                    axis=1,
+                ).max(axis=1)
+                atr_mc = tr_mc.rolling(10).mean()
+                ub_mc = (hl2_mc + 3.0 * atr_mc).tolist()
+                lb_mc = (hl2_mc - 3.0 * atr_mc).tolist()
+                cl_mc = df["close"].tolist()
+                dir_mc = [1] * n
+                for i_mc in range(1, n):
+                    if (
+                        lb_mc[i_mc] is None
+                        or ub_mc[i_mc] is None
+                        or lb_mc[i_mc - 1] is None
+                        or ub_mc[i_mc - 1] is None
+                    ):
+                        continue
+                    if cl_mc[i_mc] > (ub_mc[i_mc - 1] or 0):
+                        dir_mc[i_mc] = 1
+                    elif cl_mc[i_mc] < (lb_mc[i_mc - 1] or 0):
+                        dir_mc[i_mc] = -1
+                    else:
+                        dir_mc[i_mc] = dir_mc[i_mc - 1]
+                        if dir_mc[i_mc] == 1 and lb_mc[i_mc] < lb_mc[i_mc - 1]:
+                            lb_mc[i_mc] = lb_mc[i_mc - 1]
+                        if dir_mc[i_mc] == -1 and ub_mc[i_mc] > ub_mc[i_mc - 1]:
+                            ub_mc[i_mc] = ub_mc[i_mc - 1]
+                    st_mc[i_mc] = round(
+                        lb_mc[i_mc] if dir_mc[i_mc] == 1 else ub_mc[i_mc], 2
+                    )
+                    stdir_mc[i_mc] = dir_mc[i_mc]
             results.append(
                 {
                     "symbol": sym,
@@ -394,6 +501,12 @@ async def multi_chart(
                     "volume": df["volume"].round(0).tolist(),
                     "ma50": sma(50),
                     "ma200": sma(200),
+                    "ema9": ema_fn(9),
+                    "ema21": ema_fn(21),
+                    "ema50": ema_fn(50),
+                    "vwap": vwap_mc,
+                    "supertrend": st_mc,
+                    "st_dir": stdir_mc,
                     "rsi": rsi,
                     "macd": ml,
                     "macd_signal": ms,
@@ -440,6 +553,42 @@ async def run_backtest(req: BacktestRequest):
             r2["equity_curve"] = bt2.equity_curve
             r2["trades"] = bt2.trades
             results.append(r2)
+        # New strategies via run method
+        if req.strategy in ("macd_strategy", "macd"):
+            try:
+                bt3 = Backtester(req.symbol, req.days, req.cash)
+                r3 = (
+                    bt3.run_macd()
+                    if hasattr(bt3, "run_macd")
+                    else bt3.run_ma_crossover(req.fast_ma, req.slow_ma)
+                )
+                r3["strategy"] = "MACD"
+                r3["equity_curve"] = bt3.equity_curve
+                r3["trades"] = bt3.trades
+                results.append(r3)
+            except Exception as e:
+                log.error(f"MACD bt error: {e}")
+        if req.strategy in ("supertrend", "supertrend_strategy"):
+            try:
+                bt4 = Backtester(req.symbol, req.days, req.cash)
+                r4 = (
+                    bt4.run_supertrend()
+                    if hasattr(bt4, "run_supertrend")
+                    else bt4.run_ma_crossover(req.fast_ma, req.slow_ma)
+                )
+                r4["strategy"] = "Supertrend"
+                r4["equity_curve"] = bt4.equity_curve
+                r4["trades"] = bt4.trades
+                results.append(r4)
+            except Exception as e:
+                log.error(f"Supertrend bt error: {e}")
+        if not results:
+            bt0 = Backtester(req.symbol, req.days, req.cash)
+            r0 = bt0.run_ma_crossover(req.fast_ma, req.slow_ma)
+            r0["strategy"] = req.strategy or "MA Crossover"
+            r0["equity_curve"] = bt0.equity_curve
+            r0["trades"] = bt0.trades
+            results.append(r0)
         return {"status": "ok", "results": results}
     except Exception as e:
         raise HTTPException(500, f"Backtest error: {str(e)}")
