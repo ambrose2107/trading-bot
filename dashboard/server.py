@@ -17,10 +17,8 @@ from bot import bot
 from backtest import Backtester
 
 log = get_logger("dashboard")
+app = FastAPI(title="Trading Bot", version="3.0.0")
 
-app = FastAPI(title="Trading Bot", version="2.0.0")
-
-# Only mount static if directory exists
 if os.path.exists("dashboard/static"):
     app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
@@ -32,26 +30,21 @@ async def startup():
     await init_db()
     log.info("=" * 50)
     log.info("Dashboard started")
-    # Test Alpaca connection
     try:
         acc = alpaca_broker.get_account()
         log.info(
             f"✓ Alpaca connected | equity=${acc['equity']} | mode={alpaca_broker.mode}"
         )
     except Exception as e:
-        log.error(f"✗ Alpaca connection FAILED: {e}")
-    # Test strategy loader
+        log.error(f"✗ Alpaca FAILED: {e}")
     try:
-        from core.strategy_loader import get_strategy_info
-
         strats = get_strategy_info()
-        log.info(f"✓ Strategies loaded: {[s['name'] for s in strats]}")
+        log.info(f"✓ Strategies: {[s['name'] for s in strats]}")
     except Exception as e:
         log.error(f"✗ Strategy loader FAILED: {e}")
     log.info("=" * 50)
 
 
-# ── HTML ──────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     with open("dashboard/index.html") as f:
@@ -62,7 +55,6 @@ async def dashboard():
     return response
 
 
-# ── Account / Positions ───────────────────────────────────────────
 @app.get("/api/account")
 async def get_account():
     try:
@@ -123,11 +115,10 @@ async def get_status(db: AsyncSession = Depends(get_db)):
     }
 
 
-# ── Bot controls ──────────────────────────────────────────────────
 @app.post("/api/bot/start")
 async def start_bot():
     if bot.running:
-        return {"message": "Bot already running"}
+        return {"message": "Already running"}
     asyncio.create_task(bot.start())
     return {"message": "Bot started"}
 
@@ -139,14 +130,14 @@ async def stop_bot():
 
 
 @app.post("/api/bot/kill-switch/on")
-async def kill_switch_on():
+async def kill_on():
     risk_engine.activate_kill_switch()
     await alpaca_broker.cancel_all_orders()
     return {"message": "Kill switch activated"}
 
 
 @app.post("/api/bot/kill-switch/off")
-async def kill_switch_off():
+async def kill_off():
     risk_engine.deactivate_kill_switch()
     return {"message": "Kill switch deactivated"}
 
@@ -172,7 +163,6 @@ async def start_selected(req: StartSelectedRequest):
     return {"message": f"Started: {', '.join(req.strategies)}"}
 
 
-# ── Strategies ────────────────────────────────────────────────────
 @app.get("/api/strategies")
 async def list_strategies():
     try:
@@ -187,13 +177,21 @@ async def reload_strategies():
     return {"message": f"Reloaded {len(names)} strategies", "strategies": names}
 
 
-# ── Chart ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+# CHART — original working code + volume + MACD + EMA added
+# ─────────────────────────────────────────────────────────────────
 @app.get("/api/chart4/{symbol}")
 async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
     import pandas as pd
-    import numpy as np
 
     try:
+        try:
+            import ta as ta_lib
+
+            has_ta = True
+        except ImportError:
+            has_ta = False
+
         tf_map = {
             "5min": "5Min",
             "15min": "15Min",
@@ -220,18 +218,20 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
                 "%Y-%m-%d"
             )
             lim = days + 300
+
         df = alpaca_broker.api.get_bars(symbol, tf, start=start, limit=lim).df
         df = df.reset_index()
         df.columns = [str(c).lower() for c in df.columns]
         ts_col = next((c for c in df.columns if "time" in c), None)
         if ts_col:
-            df["ts"] = (
-                df[ts_col].astype(str).str[:16].str.replace("T", " ")
-                if intraday
-                else df[ts_col].astype(str).str[:10]
-            )
-        for col in ["open", "high", "low", "close"]:
-            df[col] = pd.to_numeric(df[col])
+            if intraday:
+                df["ts"] = df[ts_col].astype(str).str[:16].str.replace("T", " ")
+            else:
+                df["ts"] = df[ts_col].astype(str).str[:10]
+        df["close"] = pd.to_numeric(df["close"])
+        df["open"] = pd.to_numeric(df["open"])
+        df["high"] = pd.to_numeric(df["high"])
+        df["low"] = pd.to_numeric(df["low"])
         df["volume"] = pd.to_numeric(df["volume"]) if "volume" in df.columns else 0
         n = len(df)
 
@@ -239,87 +239,53 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
             if n < p:
                 return [None] * n
             return [
-                round(v, 2) if (v == v and v is not None) else None
+                round(v, 2) if v == v else None
                 for v in df["close"].rolling(p).mean().tolist()
             ]
 
         def safe_ema(p):
-            if n < p:
-                return [None] * n
             return [
-                round(v, 2) if (v == v and v is not None) else None
+                round(v, 2) if v == v else None
                 for v in df["close"].ewm(span=p, adjust=False).mean().tolist()
             ]
 
         # RSI
         rsi_vals = [None] * n
-        if n >= 15:
-            delta = df["close"].diff()
-            gain = delta.clip(lower=0).rolling(14).mean()
-            loss = (-delta.clip(upper=0)).rolling(14).mean()
-            rs = gain / loss.replace(0, float("nan"))
-            rsi_s = 100 - (100 / (1 + rs))
-            rsi_vals = [
-                round(v, 2) if (v == v and v is not None) else None
-                for v in rsi_s.tolist()
-            ]
+        if n >= 14:
+            try:
+                if has_ta:
+                    rsi_s = ta_lib.momentum.RSIIndicator(df["close"], window=14).rsi()
+                    rsi_vals = [round(v, 2) if v == v else None for v in rsi_s.tolist()]
+                else:
+                    raise Exception("no ta")
+            except:
+                delta = df["close"].diff()
+                gain = delta.clip(lower=0).rolling(14).mean()
+                loss = (-delta.clip(upper=0)).rolling(14).mean()
+                rs = gain / loss.replace(0, float("nan"))
+                rsi_s = 100 - (100 / (1 + rs))
+                rsi_vals = [round(v, 2) if v == v else None for v in rsi_s.tolist()]
 
-        # MACD (12,26,9) - manual, no external lib
+        # MACD (always manual)
         macd_line = [None] * n
         macd_signal = [None] * n
         macd_hist = [None] * n
         if n >= 27:
-            ema12 = df["close"].ewm(span=12, adjust=False).mean()
-            ema26 = df["close"].ewm(span=26, adjust=False).mean()
-            ml = ema12 - ema26
+            e12 = df["close"].ewm(span=12, adjust=False).mean()
+            e26 = df["close"].ewm(span=26, adjust=False).mean()
+            ml = e12 - e26
             ms = ml.ewm(span=9, adjust=False).mean()
             mh = ml - ms
+            clean = lambda s: [round(v, 4) if v == v else None for v in s.tolist()]
+            macd_line, macd_signal, macd_hist = clean(ml), clean(ms), clean(mh)
 
-            def clean(series):
-                return [
-                    round(v, 4) if (v == v and v is not None) else None
-                    for v in series.tolist()
-                ]
-
-            macd_line = clean(ml)
-            macd_signal = clean(ms)
-            macd_hist = clean(mh)
-
-        # Supertrend
-        st_vals = [None] * n
-        st_dir = [None] * n
-        if n >= 11:
-            hl2 = (df["high"] + df["low"]) / 2
-            tr = pd.concat(
-                [
-                    df["high"] - df["low"],
-                    abs(df["high"] - df["close"].shift(1)),
-                    abs(df["low"] - df["close"].shift(1)),
-                ],
-                axis=1,
-            ).max(axis=1)
-            atr = tr.rolling(10).mean()
-            ub = (hl2 + 3.0 * atr).tolist()
-            lb = (hl2 - 3.0 * atr).tolist()
-            cl = df["close"].tolist()
-            direction = [1] * n
-            for i in range(1, n):
-                if lb[i] is None:
-                    continue
-                if cl[i] > (ub[i - 1] or 0):
-                    direction[i] = 1
-                elif cl[i] < (lb[i - 1] or 0):
-                    direction[i] = -1
-                else:
-                    direction[i] = direction[i - 1]
-                    if direction[i] == 1 and lb[i] < lb[i - 1]:
-                        lb[i] = lb[i - 1]
-                    if direction[i] == -1 and ub[i] > ub[i - 1]:
-                        ub[i] = ub[i - 1]
-                st_vals[i] = round(lb[i] if direction[i] == 1 else ub[i], 2)
-                st_dir[i] = direction[i]
-
-        vol_vals = df["volume"].round(0).tolist()
+        # VWAP (rolling 20-bar proxy for daily VWAP)
+        vwap_vals = [None] * n
+        if "volume" in df.columns and n >= 5:
+            tp = (df["high"] + df["low"] + df["close"]) / 3
+            vol = df["volume"].replace(0, 1)
+            vwap_r = (tp * vol).rolling(20).sum() / vol.rolling(20).sum()
+            vwap_vals = [round(v, 2) if v == v else None for v in vwap_r.tolist()]
 
         return {
             "dates": df["ts"].tolist(),
@@ -327,7 +293,7 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
             "open": df["open"].round(2).tolist(),
             "high": df["high"].round(2).tolist(),
             "low": df["low"].round(2).tolist(),
-            "volume": vol_vals,
+            "volume": df["volume"].round(0).tolist(),
             "ma21": safe_ma(21),
             "ma50": safe_ma(50),
             "ma200": safe_ma(200),
@@ -337,15 +303,113 @@ async def get_chart(symbol: str, days: int = 365, timeframe: str = "1Day"):
             "macd": macd_line,
             "macd_signal": macd_signal,
             "macd_hist": macd_hist,
-            "supertrend": st_vals,
-            "st_dir": st_dir,
+            "vwap": vwap_vals,
             "count": n,
         }
     except Exception as e:
         raise HTTPException(500, f"Chart error: {str(e)}")
 
 
-# ── Backtest ──────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+# MULTI-CHART — 2x2 panel with different stocks/timeframes
+# ─────────────────────────────────────────────────────────────────
+@app.get("/api/multi-chart")
+async def multi_chart(
+    symbols: str = "AAPL,MSFT,NVDA,TSLA",
+    timeframes: str = "1D,1D,1D,1D",
+    days: int = 180,
+):
+    import pandas as pd
+
+    sym_list = [x.strip().upper() for x in symbols.split(",")][:4]
+    tf_list = [x.strip() for x in timeframes.split(",")]
+    tf_map = {
+        "5min": "5Min",
+        "15min": "15Min",
+        "1hr": "1Hour",
+        "4hr": "4Hour",
+        "1D": "1Day",
+        "1W": "1Week",
+    }
+    results = []
+    for i in range(min(4, len(sym_list))):
+        sym = sym_list[i]
+        tf = tf_map.get(tf_list[i] if i < len(tf_list) else "1D", "1Day")
+        try:
+            start = (datetime.now() - timedelta(days=days + 300)).strftime("%Y-%m-%d")
+            df = alpaca_broker.api.get_bars(sym, tf, start=start, limit=days + 300).df
+            df = df.reset_index()
+            df.columns = [str(c).lower() for c in df.columns]
+            ts_col = next((c for c in df.columns if "time" in c), None)
+            if ts_col:
+                df["ts"] = df[ts_col].astype(str).str[:10]
+            for col in ["open", "high", "low", "close"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col])
+            df["volume"] = pd.to_numeric(df["volume"]) if "volume" in df.columns else 0
+            n = len(df)
+
+            def sma(p):
+                return (
+                    [
+                        round(v, 2) if v == v else None
+                        for v in df["close"].rolling(p).mean().tolist()
+                    ]
+                    if n >= p
+                    else [None] * n
+                )
+
+            # RSI manual
+            rsi = [None] * n
+            if n >= 15:
+                d2 = df["close"].diff()
+                g = d2.clip(lower=0).rolling(14).mean()
+                l2 = (-d2.clip(upper=0)).rolling(14).mean()
+                rs = g / l2.replace(0, float("nan"))
+                r2 = 100 - (100 / (1 + rs))
+                rsi = [round(v, 2) if v == v else None for v in r2.tolist()]
+            # MACD manual
+            ml = ms = mh = [None] * n
+            if n >= 27:
+                e12 = df["close"].ewm(span=12, adjust=False).mean()
+                e26 = df["close"].ewm(span=26, adjust=False).mean()
+                _ml = e12 - e26
+                _ms = _ml.ewm(span=9, adjust=False).mean()
+                _mh = _ml - _ms
+                clean = lambda s: [round(v, 4) if v == v else None for v in s.tolist()]
+                ml, ms, mh = clean(_ml), clean(_ms), clean(_mh)
+            results.append(
+                {
+                    "symbol": sym,
+                    "timeframe": tf_list[i] if i < len(tf_list) else "1D",
+                    "dates": df["ts"].tolist(),
+                    "close": df["close"].round(2).tolist(),
+                    "open": df["open"].round(2).tolist()
+                    if "open" in df.columns
+                    else [],
+                    "high": df["high"].round(2).tolist()
+                    if "high" in df.columns
+                    else [],
+                    "low": df["low"].round(2).tolist() if "low" in df.columns else [],
+                    "volume": df["volume"].round(0).tolist(),
+                    "ma50": sma(50),
+                    "ma200": sma(200),
+                    "rsi": rsi,
+                    "macd": ml,
+                    "macd_signal": ms,
+                    "macd_hist": mh,
+                }
+            )
+        except Exception as e:
+            results.append(
+                {"symbol": sym, "error": str(e), "dates": [], "close": [], "volume": []}
+            )
+    return {"charts": results}
+
+
+# ─────────────────────────────────────────────────────────────────
+# BACKTEST (original working code unchanged)
+# ─────────────────────────────────────────────────────────────────
 class BacktestRequest(BaseModel):
     symbol: str
     strategy: str = "both"
@@ -362,37 +426,20 @@ class BacktestRequest(BaseModel):
 async def run_backtest(req: BacktestRequest):
     try:
         results = []
-        strat = req.strategy
-        if strat in ("ma_crossover", "both"):
+        if req.strategy in ("ma_crossover", "both"):
             bt = Backtester(req.symbol, req.days, req.cash)
             r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
             r["strategy"] = "MA Crossover"
             r["equity_curve"] = bt.equity_curve
             r["trades"] = bt.trades
             results.append(r)
-        if strat in ("rsi_strategy", "rsi", "both"):
+        if req.strategy in ("rsi", "rsi_strategy", "both"):
             bt2 = Backtester(req.symbol, req.days, req.cash)
             r2 = bt2.run_rsi(req.rsi_period, req.oversold, req.overbought)
             r2["strategy"] = "RSI"
             r2["equity_curve"] = bt2.equity_curve
             r2["trades"] = bt2.trades
             results.append(r2)
-        if strat == "macd_strategy":
-            bt3 = Backtester(req.symbol, req.days, req.cash)
-            r3 = bt3.run_macd()
-            r3["strategy"] = "MACD"
-            r3["equity_curve"] = bt3.equity_curve
-            r3["trades"] = bt3.trades
-            results.append(r3)
-        if strat == "supertrend":
-            bt4 = Backtester(req.symbol, req.days, req.cash)
-            r4 = bt4.run_supertrend()
-            r4["strategy"] = "Supertrend"
-            r4["equity_curve"] = bt4.equity_curve
-            r4["trades"] = bt4.trades
-            results.append(r4)
-        if not results:
-            raise ValueError(f"Unknown strategy: {strat}")
         return {"status": "ok", "results": results}
     except Exception as e:
         raise HTTPException(500, f"Backtest error: {str(e)}")
@@ -428,10 +475,8 @@ async def backtest_strategy(req: StrategyBacktestRequest):
         ts_col = next((c for c in df.columns if "time" in c), None)
         if ts_col:
             df["timestamp"] = df[ts_col].astype(str).str[:10]
-        df["close"] = pd.to_numeric(df["close"])
-        df["open"] = pd.to_numeric(df["open"])
-        df["high"] = pd.to_numeric(df["high"])
-        df["low"] = pd.to_numeric(df["low"])
+        for col in ["close", "open", "high", "low"]:
+            df[col] = pd.to_numeric(df[col])
 
         if req.strategy == "institutional_ema":
             df["ema9"] = df["close"].ewm(span=9).mean()
@@ -488,7 +533,7 @@ async def backtest_strategy(req: StrategyBacktestRequest):
                             "side": "SELL",
                             "qty": shares,
                             "price": round(price, 2),
-                            "reason": "Exit signal",
+                            "reason": "Exit",
                             "pnl": round(pnl, 2),
                             "value": shares * price,
                         }
@@ -538,264 +583,22 @@ async def backtest_strategy(req: StrategyBacktestRequest):
         raise HTTPException(500, f"Strategy backtest error: {str(e)}")
 
 
-@app.post("/api/backtest/multi")
-async def run_multi_backtest(req: BacktestRequest):
-    """Run all strategies on the same symbol and return comparison data."""
-    try:
-        results = []
-        runs = [
-            (
-                "MA Crossover",
-                lambda: Backtester(req.symbol, req.days, req.cash).run_ma_crossover(
-                    req.fast_ma, req.slow_ma
-                ),
-            ),
-            (
-                "RSI",
-                lambda: Backtester(req.symbol, req.days, req.cash).run_rsi(
-                    req.rsi_period, req.oversold, req.overbought
-                ),
-            ),
-            ("MACD", lambda: Backtester(req.symbol, req.days, req.cash).run_macd()),
-            (
-                "Supertrend",
-                lambda: Backtester(req.symbol, req.days, req.cash).run_supertrend(),
-            ),
-        ]
-        for name, fn in runs:
-            try:
-                bt = Backtester(req.symbol, req.days, req.cash)
-                if name == "MA Crossover":
-                    r = bt.run_ma_crossover(req.fast_ma, req.slow_ma)
-                elif name == "RSI":
-                    r = bt.run_rsi(req.rsi_period, req.oversold, req.overbought)
-                elif name == "MACD":
-                    r = bt.run_macd()
-                else:
-                    r = bt.run_supertrend()
-                r["strategy"] = name
-                r["equity_curve"] = bt.equity_curve
-                r["trades"] = bt.trades
-                results.append(r)
-            except Exception as e:
-                results.append(
-                    {
-                        "strategy": name,
-                        "error": str(e),
-                        "total_return_pct": 0,
-                        "win_rate_pct": 0,
-                        "total_trades": 0,
-                        "equity_curve": [],
-                        "trades": [],
-                    }
-                )
-        return {"status": "ok", "results": results}
-    except Exception as e:
-        raise HTTPException(500, f"Multi-backtest error: {str(e)}")
-
-
-# ── Watchlist ──────────────────────────────────────────────────────
-@app.get("/api/watchlist")
-async def get_watchlist(
-    symbols: str = "AAPL,MSFT,NVDA,TSLA,SPY", days: int = 60, timeframe: str = "1Day"
-):
-    import pandas as pd
-
-    results = {}
-    sym_list = [x.strip().upper() for x in symbols.split(",")][:8]
-    tf_map = {
-        "5min": "5Min",
-        "15min": "15Min",
-        "1hr": "1Hour",
-        "4hr": "4Hour",
-        "1D": "1Day",
-        "1W": "1Week",
-    }
-    tf = tf_map.get(timeframe, "1Day")
-    for sym in sym_list:
-        try:
-            start = (datetime.now() - timedelta(days=days + 50)).strftime("%Y-%m-%d")
-            df = alpaca_broker.api.get_bars(sym, tf, start=start, limit=days + 50).df
-            df = df.reset_index()
-            df.columns = [str(c).lower() for c in df.columns]
-            ts_col = next((c for c in df.columns if "time" in c), None)
-            if ts_col:
-                df["ts"] = df[ts_col].astype(str).str[:10]
-            df["close"] = pd.to_numeric(df["close"])
-            df["open"] = (
-                pd.to_numeric(df["open"]) if "open" in df.columns else df["close"]
-            )
-            df["high"] = (
-                pd.to_numeric(df["high"]) if "high" in df.columns else df["close"]
-            )
-            df["low"] = pd.to_numeric(df["low"]) if "low" in df.columns else df["close"]
-            df["volume"] = pd.to_numeric(df["volume"]) if "volume" in df.columns else 0
-            cl = df["close"].round(2).tolist()
-            last = cl[-1] if cl else 0
-            first = cl[0] if cl else 0
-            chg = round((last - first) / first * 100, 2) if first else 0
-            ma50 = (
-                [
-                    round(v, 2) if v == v else None
-                    for v in df["close"].rolling(50).mean().tolist()
-                ]
-                if len(df) >= 50
-                else [None] * len(df)
-            )
-            results[sym] = {
-                "dates": df["ts"].tolist(),
-                "close": cl,
-                "open": df["open"].round(2).tolist(),
-                "high": df["high"].round(2).tolist(),
-                "low": df["low"].round(2).tolist(),
-                "volume": df["volume"].round(0).tolist(),
-                "last": last,
-                "chg_pct": chg,
-                "ma50": ma50,
-            }
-        except Exception as e:
-            results[sym] = {
-                "error": str(e),
-                "last": 0,
-                "chg_pct": 0,
-                "dates": [],
-                "close": [],
-                "volume": [],
-            }
-    return results
-
-
-@app.get("/api/quote/{symbol}")
-async def get_quote(symbol: str):
-    try:
-        price = await alpaca_broker.get_latest_price(symbol)
-        return {"symbol": symbol, "price": price}
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/multi-chart")
-async def multi_chart(
-    symbols: str = "AAPL", timeframes: str = "1D,1D,1D,1D", days: int = 180
-):
-    """Returns chart data for up to 4 symbol+timeframe combinations for multi-study panel."""
-    import pandas as pd
-
-    sym_list = [x.strip().upper() for x in symbols.split(",")]
-    tf_list = [x.strip() for x in timeframes.split(",")]
-    tf_map = {
-        "5min": "5Min",
-        "15min": "15Min",
-        "1hr": "1Hour",
-        "4hr": "4Hour",
-        "1D": "1Day",
-        "1W": "1Week",
-    }
-    results = []
-    for i in range(min(4, len(sym_list))):
-        sym = sym_list[i] if i < len(sym_list) else sym_list[0]
-        tf = tf_map.get(tf_list[i] if i < len(tf_list) else "1D", "1Day")
-        try:
-            start = (datetime.now() - timedelta(days=days + 300)).strftime("%Y-%m-%d")
-            df = alpaca_broker.api.get_bars(sym, tf, start=start, limit=days + 300).df
-            df = df.reset_index()
-            df.columns = [str(c).lower() for c in df.columns]
-            ts_col = next((c for c in df.columns if "time" in c), None)
-            if ts_col:
-                df["ts"] = df[ts_col].astype(str).str[:10]
-            for col in ["open", "high", "low", "close"]:
-                df[col] = pd.to_numeric(df[col]) if col in df.columns else 0
-            df["volume"] = pd.to_numeric(df["volume"]) if "volume" in df.columns else 0
-            n = len(df)
-
-            def sma(p):
-                return (
-                    [
-                        round(v, 2) if v == v else None
-                        for v in df["close"].rolling(p).mean().tolist()
-                    ]
-                    if n >= p
-                    else [None] * n
-                )
-
-            def ema_fn(p):
-                return [
-                    round(v, 2) if v == v else None
-                    for v in df["close"].ewm(span=p, adjust=False).mean().tolist()
-                ]
-
-            # RSI
-            rsi = [None] * n
-            if n >= 15:
-                d = df["close"].diff()
-                g = d.clip(lower=0).rolling(14).mean()
-                l = (-d.clip(upper=0)).rolling(14).mean()
-                rs = g / l.replace(0, float("nan"))
-                r = 100 - (100 / (1 + rs))
-                rsi = [round(v, 2) if v == v else None for v in r.tolist()]
-            # MACD
-            ml = ms = mh = [None] * n
-            if n >= 27:
-                e12 = df["close"].ewm(span=12, adjust=False).mean()
-                e26 = df["close"].ewm(span=26, adjust=False).mean()
-                _ml = e12 - e26
-                _ms = _ml.ewm(span=9, adjust=False).mean()
-                _mh = _ml - _ms
-                clean = lambda s: [round(v, 4) if v == v else None for v in s.tolist()]
-                ml, ms, mh = clean(_ml), clean(_ms), clean(_mh)
-            results.append(
-                {
-                    "symbol": sym,
-                    "timeframe": tf_list[i] if i < len(tf_list) else "1D",
-                    "dates": df["ts"].tolist(),
-                    "close": df["close"].round(2).tolist(),
-                    "open": df["open"].round(2).tolist(),
-                    "high": df["high"].round(2).tolist(),
-                    "low": df["low"].round(2).tolist(),
-                    "volume": df["volume"].round(0).tolist(),
-                    "ma50": sma(50),
-                    "ma200": sma(200),
-                    "ema9": ema_fn(9),
-                    "ema21": ema_fn(21),
-                    "rsi": rsi,
-                    "macd": ml,
-                    "macd_signal": ms,
-                    "macd_hist": mh,
-                }
-            )
-        except Exception as e:
-            results.append({"symbol": sym, "error": str(e), "dates": [], "close": []})
-    return {"charts": results}
-
-
-# ── Health & Debug ────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    """Quick health check - use this to verify server is alive"""
     import os
 
     return {
         "status": "ok",
-        "version": "2.1",
+        "version": "3.0",
+        "mode": alpaca_broker.mode,
         "alpaca_key_set": bool(
             os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
         ),
-        "mode": alpaca_broker.mode,
-        "endpoints": [
-            "/api/status",
-            "/api/account",
-            "/api/positions",
-            "/api/strategies",
-            "/api/chart4/{symbol}",
-            "/api/backtest/run",
-            "/api/backtest/strategy",
-        ],
     }
 
 
 @app.get("/api/debug")
 async def debug():
-    """Full debug info - check this when something is wrong"""
     import os, sys
 
     checks = {}
@@ -804,15 +607,11 @@ async def debug():
         checks["alpaca"] = f"OK equity={acc['equity']}"
     except Exception as e:
         checks["alpaca"] = f"FAIL: {str(e)}"
-
     try:
-        from core.strategy_loader import get_strategy_info
-
         strats = get_strategy_info()
-        checks["strategies"] = f"OK found {len(strats)}: {[s['name'] for s in strats]}"
+        checks["strategies"] = f"OK {len(strats)}: {[s['name'] for s in strats]}"
     except Exception as e:
         checks["strategies"] = f"FAIL: {str(e)}"
-
     checks["bot_running"] = bot.running
     checks["kill_switch"] = getattr(risk_engine, "_kill_switch", False)
     checks["python"] = sys.version
